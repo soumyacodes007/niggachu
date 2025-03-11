@@ -1,6 +1,121 @@
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { motion } from 'framer-motion';
 
-function BattleArena({ onExit }) {
+const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress }) => {
+  const [gameState, setGameState] = useState('waiting'); // waiting, playing, finished
+  const [player1Cards, setPlayer1Cards] = useState([]);
+  const [player2Cards, setPlayer2Cards] = useState([]);
+  const [currentTurn, setCurrentTurn] = useState(1); // 1 or 2
+  const [player1Score, setPlayer1Score] = useState(0);
+  const [player2Score, setPlayer2Score] = useState(0);
+  const [currentRound, setCurrentRound] = useState(0);
+  const [selectedProperty, setSelectedProperty] = useState('');
+  const [roundResult, setRoundResult] = useState(null);
+  const [isPlayer2Connected, setIsPlayer2Connected] = useState(false);
+  
+  // Fetch Pokemon cards on component mount
+  useEffect(() => {
+    const fetchPokemonCards = async () => {
+      try {
+        // Get 20 random Pokemon (10 for each player)
+        const randomIds = Array.from({ length: 20 }, () => 
+          Math.floor(Math.random() * 150) + 1
+        );
+        
+        const pokemonPromises = randomIds.map(id => 
+          axios.get(`https://pokeapi.co/api/v2/pokemon/${id}`)
+        );
+        
+        const responses = await Promise.all(pokemonPromises);
+        
+        const pokemonCards = responses.map(response => {
+          const pokemon = response.data;
+          return {
+            id: pokemon.id,
+            name: pokemon.name,
+            image: pokemon.sprites.other['official-artwork'].front_default,
+            hp: pokemon.stats.find(stat => stat.stat.name === 'hp').base_stat,
+            attack: pokemon.stats.find(stat => stat.stat.name === 'attack').base_stat,
+            defense: pokemon.stats.find(stat => stat.stat.name === 'defense').base_stat
+          };
+        });
+        
+        // Split cards between players
+        setPlayer1Cards(pokemonCards.slice(0, 10));
+        setPlayer2Cards(pokemonCards.slice(10, 20));
+        
+        // In a real app, you'd use WebSockets to connect players
+        // For demo purposes, we'll simulate player 2 joining after 3 seconds
+        setTimeout(() => {
+          setIsPlayer2Connected(true);
+          setGameState('playing');
+        }, 3000);
+        
+      } catch (error) {
+        console.error("Error fetching Pokemon:", error);
+      }
+    };
+    
+    fetchPokemonCards();
+  }, []);
+  
+  const handleSelectProperty = (property) => {
+    if (currentTurn === 1) {
+      setSelectedProperty(property);
+      playRound(property);
+    }
+  };
+  
+  const playRound = (property) => {
+    if (currentRound >= 10) return;
+    
+    const player1Card = player1Cards[currentRound];
+    const player2Card = player2Cards[currentRound];
+    
+    let winner;
+    if (player1Card[property] > player2Card[property]) {
+      winner = 1;
+      setPlayer1Score(prev => prev + 10);
+    } else if (player1Card[property] < player2Card[property]) {
+      winner = 2;
+      setPlayer2Score(prev => prev + 10);
+    } else {
+      winner = 0; // Draw
+      setPlayer1Score(prev => prev + 5);
+      setPlayer2Score(prev => prev + 5);
+    }
+    
+    setRoundResult({
+      player1Card,
+      player2Card,
+      property,
+      winner
+    });
+    
+    // Next turn
+    setCurrentTurn(currentTurn === 1 ? 2 : 1);
+    
+    // If it was player 2's turn, advance to next round
+    if (currentTurn === 2) {
+      setTimeout(() => {
+        setCurrentRound(prev => prev + 1);
+        if (currentRound + 1 >= 10) {
+          setGameState('finished');
+        }
+      }, 2000);
+    }
+    
+    // Simulate player 2's turn
+    if (currentTurn === 1) {
+      setTimeout(() => {
+        const properties = ['hp', 'attack', 'defense'];
+        const randomProperty = properties[Math.floor(Math.random() * properties.length)];
+        playRound(randomProperty);
+      }, 2000);
+    }
+  };
+  
   return (
     <div className="fixed inset-0 bg-gray-900 z-50 flex flex-col overflow-hidden">
       {/* Battle header */}
@@ -87,6 +202,6 @@ function BattleArena({ onExit }) {
       </div>
     </div>
   );
-}
+};
 
 export default BattleArena;

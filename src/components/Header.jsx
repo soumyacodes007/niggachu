@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Pokeball3D from './Pokeball3D';
 
-function Header() {
+const Header = ({ walletConnected, walletAddress, onConnectWallet }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   return (
@@ -20,7 +20,20 @@ function Header() {
           <a href="#roadmap" className="text-white hover:text-pokemon-yellow transition">Roadmap</a>
         </nav>
         
-        <button className="hidden md:block btn-primary">Connect Wallet</button>
+        <div>
+          {walletConnected ? (
+            <div className="bg-gray-800 px-4 py-2 rounded-lg text-white">
+              {walletAddress.substring(0, 6)}...{walletAddress.substring(walletAddress.length - 4)}
+            </div>
+          ) : (
+            <button 
+              onClick={onConnectWallet}
+              className="bg-pokemon-blue hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+            >
+              Connect Wallet
+            </button>
+          )}
+        </div>
         
         {/* Mobile menu button */}
         <button 
@@ -47,6 +60,6 @@ function Header() {
       )}
     </header>
   );
-}
+};
 
 export default Header; 
