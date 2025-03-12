@@ -2,7 +2,7 @@ function Roadmap() {
   const roadmapItems = [
     {
       phase: "Phase 1",
-      title: "choose your trainer ",
+      title: "Choose Your Trainer",
       items: [
         "Initial card collection release",
         "Web app launch",
@@ -69,38 +69,44 @@ function Roadmap() {
           {/* Timeline line */}
           <div className="hidden md:block absolute left-1/2 transform -translate-x-1/2 h-full w-1 bg-gray-700"></div>
           
-          <div className="space-y-12 md:space-y-0">
+          <div className="space-y-12">
             {roadmapItems.map((item, index) => (
-              <div key={index} className="relative md:grid md:grid-cols-2 md:gap-8 md:items-center">
+              <div key={index} className="relative">
                 {/* Timeline dot */}
                 <div className={`hidden md:block absolute left-1/2 transform -translate-x-1/2 w-4 h-4 rounded-full ${getStatusColor(item.status)} z-10`}></div>
                 
                 {/* Content */}
-                <div className={`card p-6 md:p-8 ${index % 2 === 0 ? 'md:mr-12' : 'md:ml-12 md:order-first'}`}>
-                  <div className="flex items-center mb-4">
-                    <div className={`w-3 h-3 rounded-full ${getStatusColor(item.status)} mr-3`}></div>
-                    <span className="text-sm font-bold text-pokemon-yellow">{item.phase}</span>
-                    <span className={`ml-auto text-xs px-2 py-1 rounded-full ${
-                      item.status === 'completed' ? 'bg-green-900 text-green-300' : 
-                      item.status === 'in-progress' ? 'bg-yellow-900 text-yellow-300' : 
-                      'bg-gray-800 text-gray-300'
-                    }`}>
-                      {item.status === 'completed' ? 'Completed' : 
-                       item.status === 'in-progress' ? 'In Progress' : 
-                       'Upcoming'}
-                    </span>
+                <div className={`md:flex ${index % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'} items-center`}>
+                  {/* Card */}
+                  <div className={`card p-6 md:w-1/2 
+                    ${index % 2 === 0 ? 'md:mr-10 md:pr-8' : 'md:ml-10 md:pl-8'}`}>
+                    <div className="flex items-center mb-4">
+                      <div className={`w-3 h-3 rounded-full ${getStatusColor(item.status)} mr-3`}></div>
+                      <span className="text-sm font-bold text-pokemon-yellow">{item.phase}</span>
+                      <span className={`ml-auto text-xs px-2 py-1 rounded-full ${
+                        item.status === 'completed' ? 'bg-green-900 text-green-300' : 
+                        item.status === 'in-progress' ? 'bg-yellow-900 text-yellow-300' : 
+                        'bg-gray-800 text-gray-300'
+                      }`}>
+                        {item.status === 'completed' ? 'Completed' : 
+                         item.status === 'in-progress' ? 'In Progress' : 
+                         'Upcoming'}
+                      </span>
+                    </div>
+                    <h3 className="text-xl font-bold mb-4">{item.title}</h3>
+                    <ul className="space-y-2">
+                      {item.items.map((listItem, i) => (
+                        <li key={i} className="flex items-start">
+                          <svg className="h-5 w-5 text-pokemon-yellow mr-2 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="text-gray-400">{listItem}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <h3 className="text-xl font-bold mb-4">{item.title}</h3>
-                  <ul className="space-y-2">
-                    {item.items.map((listItem, i) => (
-                      <li key={i} className="flex items-start">
-                        <svg className="h-5 w-5 text-pokemon-yellow mr-2 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="text-gray-400">{listItem}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {/* Empty space for alignment */}
+                  <div className="hidden md:block md:w-1/2"></div>
                 </div>
               </div>
             ))}

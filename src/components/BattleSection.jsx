@@ -6,7 +6,6 @@ const BattleSection = ({ onCreateBattle, onJoinBattle, walletConnected, onConnec
   const [battleName, setBattleName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [betAmount, setBetAmount] = useState(0);
-  const [joinBetAmount, setJoinBetAmount] = useState(0);
   const [showActiveBattles, setShowActiveBattles] = useState(false);
 
   if (!walletConnected) {
@@ -27,8 +26,15 @@ const BattleSection = ({ onCreateBattle, onJoinBattle, walletConnected, onConnec
   }
 
   const handleJoinWithCode = () => {
-    if (joinCode && joinBetAmount > 0) {
-      onJoinBattle(joinCode, joinBetAmount);
+    if (joinCode) {
+      // Get the battle details from activeBattles
+      const battle = activeBattles[joinCode];
+      if (battle) {
+        // Use the creator's bet amount
+        onJoinBattle(joinCode, battle.betAmount);
+      } else {
+        alert("Battle code not found. Please check and try again.");
+      }
     }
   };
 
@@ -73,17 +79,17 @@ const BattleSection = ({ onCreateBattle, onJoinBattle, walletConnected, onConnec
               placeholder="Enter battle code"
               className="w-full p-2 mb-4 text-black rounded"
             />
-            <input
-              type="number"
-              value={joinBetAmount}
-              onChange={(e) => setJoinBetAmount(e.target.value)}
-              placeholder="Bet amount in $"
-              className="w-full p-2 mb-4 text-black rounded"
-            />
+            {joinCode && activeBattles[joinCode] && (
+              <div className="bg-gray-700 p-3 rounded mb-4">
+                <p className="text-sm text-gray-300">Battle Details:</p>
+                <p className="font-bold">{activeBattles[joinCode].battleName}</p>
+                <p className="text-pokemon-yellow">Bet Amount: ${activeBattles[joinCode].betAmount}</p>
+              </div>
+            )}
             <BattleButton
               onClick={handleJoinWithCode}
               className="w-full mb-4"
-              disabled={!joinCode || joinBetAmount <= 0}
+              disabled={!joinCode}
             >
               Join Battle
             </BattleButton>
@@ -106,12 +112,11 @@ const BattleSection = ({ onCreateBattle, onJoinBattle, walletConnected, onConnec
                       <div key={code} className="bg-gray-700 p-2 rounded flex justify-between items-center">
                         <div>
                           <div className="font-semibold">{battle.battleName}</div>
-                          <div className="text-sm text-gray-400">${battle.betAmount}</div>
+                          <div className="text-sm text-pokemon-yellow">${battle.betAmount}</div>
                         </div>
                         <button
                           onClick={() => {
                             setJoinCode(code);
-                            setJoinBetAmount(battle.betAmount);
                           }}
                           className="bg-pokemon-blue px-3 py-1 rounded text-sm"
                         >

@@ -26,6 +26,34 @@ function App() {
   });
   const [activeBattles, setActiveBattles] = useState({});
 
+  // Load active battles from localStorage on component mount
+  useEffect(() => {
+    const storedBattles = localStorage.getItem('activeBattles');
+    if (storedBattles) {
+      setActiveBattles(JSON.parse(storedBattles));
+    }
+    
+    // Set up an interval to check for updates in localStorage
+    const intervalId = setInterval(() => {
+      const currentBattles = localStorage.getItem('activeBattles');
+      if (currentBattles) {
+        const parsedBattles = JSON.parse(currentBattles);
+        setActiveBattles(parsedBattles);
+        
+        // Check if user is waiting and someone joined their battle
+        if (showWaitingRoom && battleInfo.battleCode) {
+          const userBattle = parsedBattles[battleInfo.battleCode];
+          if (userBattle && userBattle.status === 'ready') {
+            setShowWaitingRoom(false);
+            setShowBattleArena(true);
+          }
+        }
+      }
+    }, 2000);
+    
+    return () => clearInterval(intervalId);
+  }, [showWaitingRoom, battleInfo.battleCode]);
+
   // Connect wallet function
   const connectWallet = async () => {
     if (window.ethereum) {
@@ -72,52 +100,58 @@ function App() {
       creator: walletAddress
     });
     
-    // Add to active battles
-    setActiveBattles(prev => ({
-      ...prev,
+    // Add to active battles and save to localStorage
+    const updatedBattles = {
+      ...activeBattles,
       [battleCode]: {
         battleName,
         betAmount,
         creator: walletAddress,
         status: 'waiting'
       }
-    }));
+    };
     
-    // Show waiting room instead of battle arena
+    setActiveBattles(updatedBattles);
+    localStorage.setItem('activeBattles', JSON.stringify(updatedBattles));
+    
+    // Show waiting room
     setShowWaitingRoom(true);
   };
 
   const handleJoinBattle = (battleCode, betAmount) => {
+    // Get latest battles from localStorage
+    const storedBattles = localStorage.getItem('activeBattles');
+    const currentBattles = storedBattles ? JSON.parse(storedBattles) : {};
+    
     // Check if battle exists
-    if (activeBattles[battleCode]) {
+    if (currentBattles[battleCode]) {
       // Update battle status
-      setActiveBattles(prev => ({
-        ...prev,
+      const updatedBattles = {
+        ...currentBattles,
         [battleCode]: {
-          ...prev[battleCode],
+          ...currentBattles[battleCode],
           joiner: walletAddress,
           status: 'ready'
         }
-      }));
+      };
       
-      setBattleInfo(prev => ({
-        ...prev,
+      // Update local state
+      setActiveBattles(updatedBattles);
+      
+      // Save to localStorage for other browsers to pick up
+      localStorage.setItem('activeBattles', JSON.stringify(updatedBattles));
+      
+      // Update battle info
+      setBattleInfo({
         battleCode,
-        battleName: activeBattles[battleCode].battleName,
+        battleName: currentBattles[battleCode].battleName,
         betAmount,
         joiner: walletAddress
-      }));
+      });
       
-      // Show battle arena directly when joining
+      // Show battle arena
       setShowBattleArena(true);
       setShowWaitingRoom(false);
-      
-      // Simulate notifying the creator
-      // In a real app, this would be done through WebSockets
-      if (battleInfo.battleCode === battleCode) {
-        setShowBattleArena(true);
-        setShowWaitingRoom(false);
-      }
     } else {
       alert("Battle code not found. Please check and try again.");
     }
@@ -129,11 +163,11 @@ function App() {
     
     // Remove battle if creator exits
     if (battleInfo.creator === walletAddress) {
-      setActiveBattles(prev => {
-        const updatedBattles = {...prev};
-        delete updatedBattles[battleInfo.battleCode];
-        return updatedBattles;
-      });
+      const updatedBattles = {...activeBattles};
+      delete updatedBattles[battleInfo.battleCode];
+      
+      setActiveBattles(updatedBattles);
+      localStorage.setItem('activeBattles', JSON.stringify(updatedBattles));
     }
   };
 
