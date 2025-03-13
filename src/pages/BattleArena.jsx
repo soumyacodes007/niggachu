@@ -243,8 +243,10 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
       const joinerValue = joinerCard[selectedProperty];
 
       let winner;
-      let newCreatorScore = isCreator ? playerScore : opponentScore;
-      let newJoinerScore = isCreator ? opponentScore : playerScore;
+      // Make sure we're getting the current scores from state or localStorage
+      const gameState = JSON.parse(localStorage.getItem(getBattleStateKey()));
+      let newCreatorScore = gameState.creatorScore;
+      let newJoinerScore = gameState.joinerScore;
 
       // Ensure we're comparing numbers, not strings
       const numCreatorValue = Number(creatorValue);
@@ -348,11 +350,43 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
             // Handle game over state
             const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
             if (battle) {
+              // Determine the winner based on final scores from the game state
+              const finalGameState = JSON.parse(localStorage.getItem(getBattleStateKey()));
+              console.log("Final game state:", finalGameState);
+              
+              let winnerAddress;
+              if (finalGameState.creatorScore > finalGameState.joinerScore) {
+                winnerAddress = battle.creator;
+                console.log("Creator wins the game");
+              } else if (finalGameState.joinerScore > finalGameState.creatorScore) {
+                winnerAddress = battle.joiner;
+                console.log("Joiner wins the game");
+              } else {
+                // Handle tie
+                winnerAddress = 'tie';
+                console.log("Game ended in a tie");
+              }
+              
               battle.status = 'completed';
-              battle.winner = newCreatorScore > newJoinerScore ? battle.creator : battle.joiner;
+              battle.winner = winnerAddress;
+              battle.finalScores = {
+                creator: finalGameState.creatorScore,
+                joiner: finalGameState.joinerScore
+              };
+              
               const battles = JSON.parse(localStorage.getItem('activeBattles'));
               battles[battleCode] = battle;
               localStorage.setItem('activeBattles', JSON.stringify(battles));
+              
+              // If there's a clear winner, trigger the smart contract to distribute rewards
+              if (winnerAddress !== 'tie') {
+                console.log(`Triggering smart contract to pay ${winnerAddress}`);
+                distributePrize(winnerAddress, battleCode, battle.betAmount);
+              } else {
+                // If it's a tie, return the bet amounts to both players
+                console.log("It's a tie! Returning bet amounts to both players");
+                refundBets(battle.creator, battle.joiner, battleCode, battle.betAmount);
+              }
             }
           }
         } catch (error) {
@@ -364,6 +398,65 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
       console.error("Process round error:", error);
       setHasError(true);
     }
+  };
+
+  // Function to interact with smart contract to distribute the prize
+  const distributePrize = async (winnerAddress, battleCode, betAmount) => {
+    try {
+      if (!window.ethereum) {
+        console.error("Ethereum provider not available");
+        return;
+      }
+      
+      // Get the battle contract instance
+      const contract = await getBattleContract();
+      
+      if (isCreator) {
+        // Only creator triggers the distribution to prevent duplicate calls
+        console.log(`Distributing ${betAmount} ETH to winner: ${winnerAddress}`);
+        await contract.methods.distributePrize(battleCode, winnerAddress).send({
+          from: walletAddress,
+          gas: 200000
+        });
+        console.log("Prize distribution successful");
+      }
+    } catch (error) {
+      console.error("Error distributing prize:", error);
+    }
+  };
+
+  // Function to refund bets in case of tie
+  const refundBets = async (creatorAddress, joinerAddress, battleCode, betAmount) => {
+    try {
+      if (!window.ethereum) {
+        console.error("Ethereum provider not available");
+        return;
+      }
+      
+      // Get the battle contract instance
+      const contract = await getBattleContract();
+      
+      if (isCreator) {
+        // Only creator triggers the refund to prevent duplicate calls
+        console.log(`Refunding ${betAmount} ETH to each player due to tie`);
+        await contract.methods.refundBets(battleCode, creatorAddress, joinerAddress).send({
+          from: walletAddress,
+          gas: 200000
+        });
+        console.log("Refund successful");
+      }
+    } catch (error) {
+      console.error("Error refunding bets:", error);
+    }
+  };
+
+  // Function to get the battle contract instance
+  const getBattleContract = async () => {
+    const web3 = new window.Web3(window.ethereum);
+    return new web3.eth.Contract(
+      PokemonBattleABI,
+      POKEMON_BATTLE_CONTRACT_ADDRESS
+    );
   };
 
   const getRarityColor = (rarity) => {
@@ -736,6 +829,21 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                 <p className="mb-4">
                   Final Score: {playerScore} - {opponentScore}
                 </p>
+                {playerScore > opponentScore && (
+                  <p className="text-green-400 mb-4">
+                    You will receive {2 * betAmount} ETH as reward!
+                  </p>
+                )}
+                {opponentScore > playerScore && (
+                  <p className="text-red-400 mb-4">
+                    Your opponent wins the {2 * betAmount} ETH wager.
+                  </p>
+                )}
+                {playerScore === opponentScore && (
+                  <p className="text-yellow-400 mb-4">
+                    Game tied - your {betAmount} ETH will be refunded.
+                  </p>
+                )}
                 <button
                   onClick={onExit}
                   className="bg-pokemon-red hover:bg-red-700 text-white font-bold py-2 px-4 rounded"

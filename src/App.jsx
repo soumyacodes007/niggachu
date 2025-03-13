@@ -13,6 +13,8 @@ import Footer from './components/Footer';
 import BattleButton from './components/BattleButton';
 import BattleArena from './pages/BattleArena';
 import WaitingRoom from './components/WaitingRoom';
+import { PokemonBattleABI, POKEMON_BATTLE_CONTRACT_ADDRESS } from './contracts/PokemonBattleABI';
+import Web3 from 'web3';
 
 function App() {
   const [showBattleArena, setShowBattleArena] = useState(false);
@@ -25,6 +27,7 @@ function App() {
     betAmount: 0
   });
   const [activeBattles, setActiveBattles] = useState({});
+  const [contractInstance, setContractInstance] = useState(null);
 
   // Load active battles from localStorage on component mount
   useEffect(() => {
@@ -53,6 +56,31 @@ function App() {
     
     return () => clearInterval(intervalId);
   }, [showWaitingRoom, battleInfo.battleCode]);
+
+  // Initialize Web3 and contract instance
+  useEffect(() => {
+    const initWeb3 = async () => {
+      if (window.ethereum) {
+        try {
+          // Initialize Web3 with the provider
+          const web3 = new Web3(window.ethereum);
+          
+          // Create contract instance
+          const pokemonBattleContract = new web3.eth.Contract(
+            PokemonBattleABI,
+            POKEMON_BATTLE_CONTRACT_ADDRESS
+          );
+          
+          setContractInstance(pokemonBattleContract);
+          console.log("Smart contract initialized");
+        } catch (error) {
+          console.error("Error initializing Web3:", error);
+        }
+      }
+    };
+    
+    initWeb3();
+  }, []);
 
   // Connect wallet function
   const connectWallet = async () => {
@@ -89,85 +117,134 @@ function App() {
     checkWalletConnection();
   }, []);
 
-  const handleCreateBattle = (battleName, betAmount) => {
-    const battleCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+  const handleCreateBattle = async (battleName, betAmount) => {
+    if (!contractInstance) {
+      console.error("Contract not initialized");
+      return;
+    }
     
-    // Store battle info in state
-    setBattleInfo({
-      battleCode,
-      battleName,
-      betAmount,
-      creator: walletAddress
-    });
-    
-    // Add to active battles and save to localStorage
-    const updatedBattles = {
-      ...activeBattles,
-      [battleCode]: {
+    try {
+      const battleCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+      
+      // Store battle info in state
+      setBattleInfo({
+        battleCode,
         battleName,
         betAmount,
-        creator: walletAddress,
-        status: 'waiting'
-      }
-    };
-    
-    setActiveBattles(updatedBattles);
-    localStorage.setItem('activeBattles', JSON.stringify(updatedBattles));
-    
-    // Show waiting room
-    setShowWaitingRoom(true);
-  };
-
-  const handleJoinBattle = (battleCode, betAmount) => {
-    // Get latest battles from localStorage
-    const storedBattles = localStorage.getItem('activeBattles');
-    const currentBattles = storedBattles ? JSON.parse(storedBattles) : {};
-    
-    // Check if battle exists
-    if (currentBattles[battleCode]) {
-      // Update battle status
+        creator: walletAddress
+      });
+      
+      // Create battle on the blockchain
+      console.log(`Creating battle with bet amount ${betAmount} ETH`);
+      await contractInstance.methods.createBattle(battleCode).send({
+        from: walletAddress,
+        value: Web3.utils.toWei(betAmount.toString(), 'ether'),
+        gas: 200000
+      });
+      
+      // Add to active battles and save to localStorage
       const updatedBattles = {
-        ...currentBattles,
+        ...activeBattles,
         [battleCode]: {
-          ...currentBattles[battleCode],
-          joiner: walletAddress,
-          status: 'ready'
+          battleName,
+          betAmount,
+          creator: walletAddress,
+          status: 'waiting'
         }
       };
       
-      // Update local state
       setActiveBattles(updatedBattles);
-      
-      // Save to localStorage for other browsers to pick up
       localStorage.setItem('activeBattles', JSON.stringify(updatedBattles));
       
-      // Update battle info
-      setBattleInfo({
-        battleCode,
-        battleName: currentBattles[battleCode].battleName,
-        betAmount,
-        joiner: walletAddress
-      });
-      
-      // Show battle arena
-      setShowBattleArena(true);
-      setShowWaitingRoom(false);
-    } else {
-      alert("Battle code not found. Please check and try again.");
+      // Show waiting room
+      setShowWaitingRoom(true);
+    } catch (error) {
+      console.error("Error creating battle:", error);
+      alert("Failed to create battle. Please check your wallet and try again.");
     }
   };
 
-  const handleExitBattle = () => {
+  const handleJoinBattle = async (battleCode, betAmount) => {
+    if (!contractInstance) {
+      console.error("Contract not initialized");
+      return;
+    }
+    
+    try {
+      // Get latest battles from localStorage
+      const storedBattles = localStorage.getItem('activeBattles');
+      const currentBattles = storedBattles ? JSON.parse(storedBattles) : {};
+      
+      // Check if battle exists
+      if (currentBattles[battleCode]) {
+        // Join battle on the blockchain
+        console.log(`Joining battle with bet amount ${betAmount} ETH`);
+        await contractInstance.methods.joinBattle(battleCode).send({
+          from: walletAddress,
+          value: Web3.utils.toWei(betAmount.toString(), 'ether'),
+          gas: 200000
+        });
+        
+        // Update battle status
+        const updatedBattles = {
+          ...currentBattles,
+          [battleCode]: {
+            ...currentBattles[battleCode],
+            joiner: walletAddress,
+            status: 'ready'
+          }
+        };
+        
+        // Update local state
+        setActiveBattles(updatedBattles);
+        
+        // Save to localStorage for other browsers to pick up
+        localStorage.setItem('activeBattles', JSON.stringify(updatedBattles));
+        
+        // Update battle info
+        setBattleInfo({
+          battleCode,
+          battleName: currentBattles[battleCode].battleName,
+          betAmount,
+          joiner: walletAddress
+        });
+        
+        // Show battle arena
+        setShowBattleArena(true);
+        setShowWaitingRoom(false);
+      } else {
+        alert("Battle code not found. Please check and try again.");
+      }
+    } catch (error) {
+      console.error("Error joining battle:", error);
+      alert("Failed to join battle. Please check your wallet and try again.");
+    }
+  };
+
+  const handleExitBattle = async () => {
     setShowBattleArena(false);
     setShowWaitingRoom(false);
     
-    // Remove battle if creator exits
+    // Remove battle if creator exits and no one has joined
     if (battleInfo.creator === walletAddress) {
-      const updatedBattles = {...activeBattles};
-      delete updatedBattles[battleInfo.battleCode];
-      
-      setActiveBattles(updatedBattles);
-      localStorage.setItem('activeBattles', JSON.stringify(updatedBattles));
+      try {
+        const battle = activeBattles[battleInfo.battleCode];
+        if (battle && !battle.joiner) {
+          // Cancel battle on the blockchain to refund creator
+          await contractInstance.methods.cancelBattle(battleInfo.battleCode).send({
+            from: walletAddress,
+            gas: 200000
+          });
+          
+          const updatedBattles = {...activeBattles};
+          delete updatedBattles[battleInfo.battleCode];
+          
+          setActiveBattles(updatedBattles);
+          localStorage.setItem('activeBattles', JSON.stringify(updatedBattles));
+        }
+      } catch (error) {
+        console.error("Error cancelling battle:", error);
+      }
     }
   };
 
