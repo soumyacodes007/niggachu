@@ -5,26 +5,36 @@ import { generateInitialDeck } from '../utils/pokemonUtils';
 const CARD_BACK_IMAGE = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png";
 
 const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress }) => {
-  const [player1Deck, setPlayer1Deck] = useState([]);
-  const [player2Deck, setPlayer2Deck] = useState([]);
+  const [playerDeck, setPlayerDeck] = useState([]);
+  const [opponentDeck, setOpponentDeck] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentRound, setCurrentRound] = useState(0);
-  const [player1Score, setPlayer1Score] = useState(0);
-  const [player2Score, setPlayer2Score] = useState(0);
+  const [playerScore, setPlayerScore] = useState(0);
+  const [opponentScore, setOpponentScore] = useState(0);
   const [selectedProperty, setSelectedProperty] = useState(null);
-  const [player1Selection, setPlayer1Selection] = useState(null);
-  const [player2Selection, setPlayer2Selection] = useState(null);
+  const [playerSelection, setPlayerSelection] = useState(null);
+  const [opponentSelection, setOpponentSelection] = useState(null);
   const [roundResult, setRoundResult] = useState(null);
   const [gameOver, setGameOver] = useState(false);
   const [isCreator, setIsCreator] = useState(false);
   const [opponent, setOpponent] = useState(null);
   const [gameStarted, setGameStarted] = useState(false);
+  const [currentTurn, setCurrentTurn] = useState('creator');
 
   // Get battle state key
   const getBattleStateKey = () => `battle_${battleCode}_state`;
-  const getPlayer1SelectionKey = () => `battle_${battleCode}_player1_selection`;
-  const getPlayer2SelectionKey = () => `battle_${battleCode}_player2_selection`;
+  const getCreatorSelectionKey = () => `battle_${battleCode}_creator_selection`;
+  const getJoinerSelectionKey = () => `battle_${battleCode}_joiner_selection`;
   const getDecksKey = () => `battle_${battleCode}_decks`;
+
+  // Check if it's this player's turn
+  const isMyTurn = () => {
+    if (isCreator) {
+      return currentTurn === 'creator';
+    } else {
+      return currentTurn === 'joiner';
+    }
+  };
 
   useEffect(() => {
     const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
@@ -50,7 +60,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
     const initializeGame = async () => {
       setIsLoading(true);
       try {
-        // Only creator initializes the decks
+        // Only creator initializes the decks and game state
         if (isCreatorPlayer) {
           const deck1 = await generateInitialDeck();
           const deck2 = await generateInitialDeck();
@@ -58,12 +68,13 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
           const decks = { deck1, deck2 };
           localStorage.setItem(getDecksKey(), JSON.stringify(decks));
           
-          // Initialize game state
+          // Initialize game state with turn information
           const initialState = {
             currentRound: 0,
-            player1Score: 0,
-            player2Score: 0,
+            creatorScore: 0,
+            joinerScore: 0,
             selectedProperty: getRandomProperty(),
+            currentTurn: 'creator', // Always start with creator
             lastUpdate: Date.now()
           };
           localStorage.setItem(getBattleStateKey(), JSON.stringify(initialState));
@@ -75,8 +86,13 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
         while (attempts < maxAttempts) {
           const decks = JSON.parse(localStorage.getItem(getDecksKey()));
           if (decks) {
-            setPlayer1Deck(isCreatorPlayer ? decks.deck1 : decks.deck2);
-            setPlayer2Deck(isCreatorPlayer ? decks.deck2 : decks.deck1);
+            if (isCreatorPlayer) {
+              setPlayerDeck(decks.deck1);
+              setOpponentDeck(decks.deck2);
+            } else {
+              setPlayerDeck(decks.deck2);
+              setOpponentDeck(decks.deck1);
+            }
             break;
           }
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -97,12 +113,11 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
 
     return () => {
       clearInterval(syncInterval);
-      // Only creator cleans up the game data
       if (isCreatorPlayer) {
         localStorage.removeItem(getDecksKey());
         localStorage.removeItem(getBattleStateKey());
-        localStorage.removeItem(getPlayer1SelectionKey());
-        localStorage.removeItem(getPlayer2SelectionKey());
+        localStorage.removeItem(getCreatorSelectionKey());
+        localStorage.removeItem(getJoinerSelectionKey());
       }
     };
   }, [battleCode, walletAddress]);
@@ -113,15 +128,42 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
   };
 
   const handleCardSelect = (card) => {
-    if ((isCreator && player1Selection) || (!isCreator && player2Selection)) return;
+    console.log("Card selected:", card.name);
+    console.log("Is my turn:", isMyTurn());
+    console.log("Current turn:", currentTurn);
+    console.log("Is creator:", isCreator);
+    
+    // Check if it's player's turn
+    if (!isMyTurn()) {
+      console.log("Not your turn!");
+      return;
+    }
 
-    const selectionKey = isCreator ? getPlayer1SelectionKey() : getPlayer2SelectionKey();
+    // Check if player has already selected
+    if (playerSelection) {
+      console.log("You've already selected a card!");
+      return;
+    }
+
+    // Store the selection in localStorage with the correct key
+    const selectionKey = isCreator ? getCreatorSelectionKey() : getJoinerSelectionKey();
     localStorage.setItem(selectionKey, JSON.stringify(card));
+    console.log("Selection saved with key:", selectionKey);
 
-    if (isCreator) {
-      setPlayer1Selection(card);
-    } else {
-      setPlayer2Selection(card);
+    // Update local state
+    setPlayerSelection(card);
+
+    // Update game state with new turn
+    const gameState = JSON.parse(localStorage.getItem(getBattleStateKey()));
+    if (gameState) {
+      const newTurn = isCreator ? 'joiner' : 'creator';
+      const newGameState = {
+        ...gameState,
+        currentTurn: newTurn,
+        lastUpdate: Date.now()
+      };
+      localStorage.setItem(getBattleStateKey(), JSON.stringify(newGameState));
+      console.log("Turn changed to:", newTurn);
     }
   };
 
@@ -132,102 +174,117 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
     // Update game state
     setCurrentRound(gameState.currentRound);
     setSelectedProperty(gameState.selectedProperty);
-    setPlayer1Score(gameState.player1Score);
-    setPlayer2Score(gameState.player2Score);
-
-    // Check for card selections
-    const p1Selection = JSON.parse(localStorage.getItem(getPlayer1SelectionKey()));
-    const p2Selection = JSON.parse(localStorage.getItem(getPlayer2SelectionKey()));
-
+    setCurrentTurn(gameState.currentTurn);
+    
+    // Update scores based on player role
     if (isCreator) {
-      setPlayer1Selection(p1Selection);
-      setPlayer2Selection(p2Selection);
+      setPlayerScore(gameState.creatorScore);
+      setOpponentScore(gameState.joinerScore);
     } else {
-      setPlayer1Selection(p2Selection);
-      setPlayer2Selection(p1Selection);
+      setPlayerScore(gameState.joinerScore);
+      setOpponentScore(gameState.creatorScore);
     }
 
-    // Process round if both players have selected
-    if (p1Selection && p2Selection && !roundResult) {
-      processRound(p1Selection, p2Selection);
+    // Get selections from localStorage
+    const creatorSelection = JSON.parse(localStorage.getItem(getCreatorSelectionKey()));
+    const joinerSelection = JSON.parse(localStorage.getItem(getJoinerSelectionKey()));
+
+    // Update local selection state based on player role
+    if (isCreator) {
+      setPlayerSelection(creatorSelection);
+      setOpponentSelection(joinerSelection);
+    } else {
+      setPlayerSelection(joinerSelection);
+      setOpponentSelection(creatorSelection);
+    }
+
+    // Process round if both players have selected and no result yet
+    if (creatorSelection && joinerSelection && !roundResult) {
+      processRound(creatorSelection, joinerSelection);
     }
   };
 
-  const processRound = (p1Card, p2Card) => {
-    const p1Value = p1Card[selectedProperty];
-    const p2Value = p2Card[selectedProperty];
+  const processRound = (creatorCard, joinerCard) => {
+    const creatorValue = creatorCard[selectedProperty];
+    const joinerValue = joinerCard[selectedProperty];
 
-    let result;
-    let newPlayer1Score = player1Score;
-    let newPlayer2Score = player2Score;
+    let winner;
+    let newCreatorScore = isCreator ? playerScore : opponentScore;
+    let newJoinerScore = isCreator ? opponentScore : playerScore;
 
-    if (p1Value > p2Value) {
-      newPlayer1Score += 1;
-      result = 'player1';
-    } else if (p2Value > p1Value) {
-      newPlayer2Score += 1;
-      result = 'player2';
+    if (creatorValue > joinerValue) {
+      newCreatorScore += 1;
+      winner = 'creator';
+    } else if (joinerValue > creatorValue) {
+      newJoinerScore += 1;
+      winner = 'joiner';
     } else {
-      result = 'tie';
+      winner = 'tie';
     }
 
-    // Only creator updates the shared state
-    if (isCreator) {
-      const gameState = {
-        currentRound,
-        selectedProperty,
-        player1Score: newPlayer1Score,
-        player2Score: newPlayer2Score,
-        lastUpdate: Date.now()
-      };
-      localStorage.setItem(getBattleStateKey(), JSON.stringify(gameState));
-    }
-
+    // Set round result for display
     setRoundResult({
-      winner: result,
+      winner,
       property: selectedProperty,
-      player1Value: p1Value,
-      player2Value: p2Value
+      creatorValue,
+      joinerValue
     });
+
+    // Update scores in local state based on player role
+    if (isCreator) {
+      setPlayerScore(newCreatorScore);
+      setOpponentScore(newJoinerScore);
+    } else {
+      setPlayerScore(newJoinerScore);
+      setOpponentScore(newCreatorScore);
+    }
 
     // Move to next round after delay
     setTimeout(() => {
       if (currentRound < 9) {
-        // Remove selected cards from decks
-        setPlayer1Deck(prev => prev.filter(card => card.id !== (isCreator ? p1Card.id : p2Card.id)));
-        setPlayer2Deck(prev => prev.filter(card => card.id !== (isCreator ? p2Card.id : p1Card.id)));
-        
         // Clear selections
-        if (isCreator) {
-          localStorage.removeItem(getPlayer1SelectionKey());
-          localStorage.removeItem(getPlayer2SelectionKey());
-          
-          // Update game state for next round
-          const gameState = {
-            currentRound: currentRound + 1,
-            selectedProperty: getRandomProperty(),
-            player1Score: newPlayer1Score,
-            player2Score: newPlayer2Score,
-            lastUpdate: Date.now()
-          };
-          localStorage.setItem(getBattleStateKey(), JSON.stringify(gameState));
-        }
+        localStorage.removeItem(getCreatorSelectionKey());
+        localStorage.removeItem(getJoinerSelectionKey());
         
-        setPlayer1Selection(null);
-        setPlayer2Selection(null);
+        // Update game state for next round (only creator needs to do this)
+        const gameState = {
+          currentRound: currentRound + 1,
+          creatorScore: newCreatorScore,
+          joinerScore: newJoinerScore,
+          selectedProperty: getRandomProperty(),
+          currentTurn: 'creator', // Reset turn to creator for next round
+          lastUpdate: Date.now()
+        };
+        localStorage.setItem(getBattleStateKey(), JSON.stringify(gameState));
+
+        // Update decks by removing the selected cards
+        if (isCreator) {
+          setPlayerDeck(prev => prev.filter(card => card.id !== creatorCard.id));
+          if (opponentSelection) {
+            setOpponentDeck(prev => prev.filter(card => card.id !== joinerCard.id));
+          }
+        } else {
+          setPlayerDeck(prev => prev.filter(card => card.id !== joinerCard.id));
+          if (opponentSelection) {
+            setOpponentDeck(prev => prev.filter(card => card.id !== creatorCard.id));
+          }
+        }
+
+        // Reset local state
+        setPlayerSelection(null);
+        setOpponentSelection(null);
         setRoundResult(null);
+        setCurrentRound(prev => prev + 1);
       } else {
         setGameOver(true);
         // Handle game over state
-        if (isCreator) {
-          const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
-          if (battle) {
-            battle.status = 'completed';
-            battle.winner = newPlayer1Score > newPlayer2Score ? battle.creator : battle.joiner;
-            const battles = JSON.parse(localStorage.getItem('activeBattles'));
-            battles[battleCode] = battle;
-            localStorage.setItem('activeBattles', JSON.stringify(battles));
-          }
+        const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
+        if (battle) {
+          battle.status = 'completed';
+          battle.winner = newCreatorScore > newJoinerScore ? battle.creator : battle.joiner;
+          const battles = JSON.parse(localStorage.getItem('activeBattles'));
+          battles[battleCode] = battle;
+          localStorage.setItem('activeBattles', JSON.stringify(battles));
         }
       }
     }, 3000);
@@ -244,6 +301,28 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
     }
   };
 
+  const getWinnerMessage = () => {
+    if (!roundResult) return '';
+
+    const didIWin = (isCreator && roundResult.winner === 'creator') || 
+                   (!isCreator && roundResult.winner === 'joiner');
+
+    return didIWin ? 'You won this round!' : 
+           roundResult.winner === 'tie' ? 'It\'s a tie!' : 
+           'Opponent won this round!';
+  };
+
+  const getWinnerClass = () => {
+    if (!roundResult) return '';
+
+    const didIWin = (isCreator && roundResult.winner === 'creator') || 
+                   (!isCreator && roundResult.winner === 'joiner');
+
+    return didIWin ? 'text-green-400' : 
+           roundResult.winner === 'tie' ? 'text-yellow-400' : 
+           'text-red-400';
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
@@ -256,209 +335,229 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4">
-      <div className="container mx-auto">
-        {/* Debug Information */}
-        <div className="bg-gray-800 p-4 rounded-lg mb-4 text-sm font-mono">
-          <h3 className="text-lg font-bold mb-2">Debug Info:</h3>
-          <div>Battle Code: {battleCode}</div>
-          <div>Your Address: {walletAddress}</div>
-          <div>Role: {isCreator ? 'Creator (Player 1)' : 'Joiner (Player 2)'}</div>
-          <div>Opponent Address: {opponent || 'Waiting for opponent...'}</div>
-          <div>Game Started: {gameStarted ? 'Yes' : 'No'}</div>
-          <div>Current Round: {currentRound + 1}/10</div>
-          <div>Your Deck Size: {player1Deck.length}</div>
-          <div>Opponent Deck Size: {player2Deck.length}</div>
-        </div>
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Background Video */}
+      <video
+        autoPlay
+        loop
+        muted
+        className="absolute top-0 left-0 min-w-full min-h-full object-cover z-0 opacity-50"
+      >
+        <source src="/background.mp4" type="video/mp4" />
+        Your browser does not support the video tag.
+      </video>
 
-        {/* Add player role indicator */}
-        <div className="text-center mb-4">
-          <span className="bg-gray-800 px-3 py-1 rounded-full text-sm">
-            {isCreator ? 'Player 1' : 'Player 2'}
-          </span>
-        </div>
+      {/* Content Overlay */}
+      <div className="relative z-10 min-h-screen bg-black bg-opacity-70 text-white p-4">
+        <div className="container mx-auto">
+          {/* Debug Information */}
+          <div className="bg-gray-800 bg-opacity-90 p-4 rounded-lg mb-4 text-sm font-mono">
+            <h3 className="text-lg font-bold mb-2">Debug Info:</h3>
+            <div>Battle Code: {battleCode}</div>
+            <div>Your Address: {walletAddress}</div>
+            <div>Role: {isCreator ? 'Creator' : 'Joiner'}</div>
+            <div>Current Turn: {currentTurn}</div>
+            <div>Is My Turn: {isMyTurn() ? 'Yes' : 'No'}</div>
+            <div>Opponent Address: {opponent || 'Waiting for opponent...'}</div>
+            <div>Game Started: {gameStarted ? 'Yes' : 'No'}</div>
+            <div>Current Round: {currentRound + 1}/10</div>
+            <div>Your Deck Size: {playerDeck.length}</div>
+            <div>Opponent Deck Size: {opponentDeck.length}</div>
+          </div>
 
-        {/* Header with scores and round info */}
-        <div className="flex justify-between items-center mb-6">
-          <div className="text-xl">Your Score: {player1Score}</div>
-          <div>
-            <div className="text-center text-xl mb-2">Round {currentRound + 1}/10</div>
-            <div className="text-center text-lg text-pokemon-yellow">
-              Comparing: {selectedProperty?.toUpperCase()}
-        </div>
-      </div>
-          <div className="text-xl">Opponent Score: {player2Score}</div>
-        </div>
-        
-        {/* Round Result Display */}
-        {roundResult && (
-          <div className="bg-gray-800 p-4 rounded-lg mb-6 text-center">
-            <h3 className="text-xl mb-2">Round Result</h3>
-            <p className="mb-2">
-              {selectedProperty}: {roundResult.player1Value} vs {roundResult.player2Value}
-            </p>
-            <p className={`text-lg ${
-              roundResult.winner === 'player1' 
-                ? 'text-green-400' 
-                : roundResult.winner === 'player2' 
-                  ? 'text-red-400' 
-                  : 'text-yellow-400'
+          {/* Player role indicator */}
+          <div className="text-center mb-4">
+            <span className="bg-gray-800 bg-opacity-90 px-3 py-1 rounded-full text-sm">
+              {isCreator ? 'Creator' : 'Joiner'}
+            </span>
+          </div>
+
+          {/* Turn indicator */}
+          <div className="text-center mb-4">
+            <span className={`px-4 py-2 rounded-full ${
+              isMyTurn() 
+                ? 'bg-pokemon-red text-white' 
+                : 'bg-gray-800 bg-opacity-90 text-gray-400'
             }`}>
-              {roundResult.winner === 'player1' 
-                ? 'You won this round!' 
-                : roundResult.winner === 'player2' 
-                  ? 'Opponent won this round!' 
-                  : 'It\'s a tie!'}
-            </p>
+              {isMyTurn() ? "Your Turn!" : "Opponent's Turn"}
+            </span>
           </div>
-        )}
 
-        {/* Opponent's Cards (face down) */}
-        <div className="mb-8">
-          <h3 className="text-xl mb-4">Opponent's Cards</h3>
-          <div className="grid grid-cols-5 gap-4">
-            {player2Deck.map((card, index) => (
-              <div
-                key={card.id}
-                className="bg-gray-800 p-2 rounded-lg relative transform hover:scale-105 transition-transform"
-              >
-                <img 
-                  src={CARD_BACK_IMAGE}
-                  alt="Card Back"
-                  className="w-full h-32 object-contain opacity-90"
-                />
-                {player2Selection?.id === card.id && (
-                  <div className="absolute inset-0 border-2 border-pokemon-yellow rounded-lg"></div>
-                )}
+          {/* Header with scores and round info */}
+          <div className="flex justify-between items-center mb-6">
+            <div className="text-xl bg-gray-800 bg-opacity-90 px-4 py-2 rounded">Your Score: {playerScore}</div>
+            <div className="text-center">
+              <div className="text-xl mb-2 bg-gray-800 bg-opacity-90 px-4 py-2 rounded">Round {currentRound + 1}/10</div>
+              <div className="text-lg text-pokemon-yellow bg-gray-800 bg-opacity-90 px-4 py-2 rounded">
+                Comparing: {selectedProperty?.toUpperCase()}
               </div>
-            ))}
+            </div>
+            <div className="text-xl bg-gray-800 bg-opacity-90 px-4 py-2 rounded">Opponent Score: {opponentScore}</div>
           </div>
-        </div>
+          
+          {/* Round Result Display */}
+          {roundResult && (
+            <div className="bg-gray-800 bg-opacity-90 p-4 rounded-lg mb-6 text-center">
+              <h3 className="text-xl mb-2">Round Result</h3>
+              <p className="mb-2">
+                {selectedProperty}: {isCreator ? roundResult.creatorValue : roundResult.joinerValue} vs {isCreator ? roundResult.joinerValue : roundResult.creatorValue}
+              </p>
+              <p className={`text-lg ${getWinnerClass()}`}>
+                {getWinnerMessage()}
+              </p>
+            </div>
+          )}
 
-        {/* Selected Cards in Play */}
-        {(player1Selection || player2Selection) && (
-          <div className="my-8">
-            <h3 className="text-xl mb-4">Cards in Play</h3>
-            <div className="flex justify-center gap-8">
-              {/* Your Selected Card */}
-              {player1Selection && (
-                <div className="bg-gray-800 p-4 rounded-lg transform transition-transform hover:scale-105">
+          {/* Opponent's Cards (face down) */}
+          <div className="mb-8">
+            <h3 className="text-xl mb-4 bg-gray-800 bg-opacity-90 px-4 py-2 rounded inline-block">Opponent's Cards</h3>
+            <div className="grid grid-cols-5 gap-4">
+              {opponentDeck.map((card, index) => (
+                <div
+                  key={card.id}
+                  className="bg-gray-800 p-2 rounded-lg relative transform hover:scale-105 transition-transform"
+                >
                   <img 
-                    src={player1Selection.image}
-                    alt={player1Selection.name}
-                    className="w-40 h-40 object-contain"
+                    src={CARD_BACK_IMAGE}
+                    alt="Card Back"
+                    className="w-full h-32 object-contain opacity-90"
                   />
-                  <h4 className="text-lg font-bold capitalize mt-2">
-                    {player1Selection.name}
-                  </h4>
-                  <p className={getRarityColor(player1Selection.rarity)}>
-                    {player1Selection.rarity}
-                  </p>
-                  <p>
-                    {selectedProperty}: {player1Selection[selectedProperty]}
-                  </p>
-                </div>
-              )}
-
-              {/* VS Indicator */}
-              {player1Selection && player2Selection && (
-                <div className="flex items-center">
-                  <span className="text-4xl text-pokemon-yellow font-bold">VS</span>
-                </div>
-              )}
-
-              {/* Opponent's Selected Card */}
-              {player2Selection && (
-                <div className="bg-gray-800 p-4 rounded-lg transform transition-transform hover:scale-105">
-                  {roundResult ? (
-                    <>
-                      <img 
-                        src={player2Selection.image}
-                        alt={player2Selection.name}
-                        className="w-40 h-40 object-contain"
-                      />
-                      <h4 className="text-lg font-bold capitalize mt-2">
-                        {player2Selection.name}
-                      </h4>
-                      <p className={getRarityColor(player2Selection.rarity)}>
-                        {player2Selection.rarity}
-                      </p>
-                      <p>
-                        {selectedProperty}: {player2Selection[selectedProperty]}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <img 
-                        src={CARD_BACK_IMAGE}
-                        alt="Card Back"
-                        className="w-40 h-40 object-contain"
-                      />
-                      <p className="text-center mt-2">Waiting for reveal...</p>
-                    </>
+                  {opponentSelection?.id === card.id && (
+                    <div className="absolute inset-0 border-2 border-pokemon-yellow rounded-lg"></div>
                   )}
                 </div>
-              )}
+              ))}
             </div>
           </div>
-        )}
 
-        {/* Your Cards (face up) */}
-        <div className="mt-8">
-          <h3 className="text-xl mb-4">Your Cards</h3>
-          <div className="grid grid-cols-5 gap-4">
-            {player1Deck.map(card => (
-              <button
-                key={card.id}
-                onClick={() => handleCardSelect(card)}
-                className={`bg-gray-800 p-2 rounded-lg hover:bg-gray-700 transition-colors
-                  ${player1Selection?.id === card.id ? 'ring-2 ring-pokemon-yellow' : ''}
-                  ${!isCreator && player2Selection ? 'opacity-50 cursor-not-allowed' : ''}`}
-                disabled={!!player1Selection || (!isCreator && player2Selection)}
-              >
-                <img 
-                  src={card.image}
-                  alt={card.name}
-                  className="w-full h-32 object-contain"
-                />
-                <h4 className="text-sm font-bold capitalize mt-2">
-                  {card.name}
-                </h4>
-                <p className={`text-sm ${getRarityColor(card.rarity)}`}>
-                  {card.rarity}
+          {/* Selected Cards in Play */}
+          {(playerSelection || opponentSelection) && (
+            <div className="my-8">
+              <h3 className="text-xl mb-4 bg-gray-800 bg-opacity-90 px-4 py-2 rounded inline-block">Cards in Play</h3>
+              <div className="flex justify-center gap-8">
+                {/* Your Selected Card */}
+                {playerSelection && (
+                  <div className="bg-gray-800 p-4 rounded-lg transform transition-transform hover:scale-105">
+                    <img 
+                      src={playerSelection.image}
+                      alt={playerSelection.name}
+                      className="w-40 h-40 object-contain"
+                    />
+                    <h4 className="text-lg font-bold capitalize mt-2">
+                      {playerSelection.name}
+                    </h4>
+                    <p className={getRarityColor(playerSelection.rarity)}>
+                      {playerSelection.rarity}
+                    </p>
+                    <p>
+                      {selectedProperty}: {playerSelection[selectedProperty]}
+                    </p>
+                  </div>
+                )}
+
+                {/* VS Indicator */}
+                {playerSelection && opponentSelection && (
+                  <div className="flex items-center">
+                    <span className="text-4xl text-pokemon-yellow font-bold">VS</span>
+                  </div>
+                )}
+
+                {/* Opponent's Selected Card */}
+                {opponentSelection && (
+                  <div className="bg-gray-800 p-4 rounded-lg transform transition-transform hover:scale-105">
+                    {roundResult ? (
+                      <>
+                        <img 
+                          src={opponentSelection.image}
+                          alt={opponentSelection.name}
+                          className="w-40 h-40 object-contain"
+                        />
+                        <h4 className="text-lg font-bold capitalize mt-2">
+                          {opponentSelection.name}
+                        </h4>
+                        <p className={getRarityColor(opponentSelection.rarity)}>
+                          {opponentSelection.rarity}
+                        </p>
+                        <p>
+                          {selectedProperty}: {opponentSelection[selectedProperty]}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <img 
+                          src={CARD_BACK_IMAGE}
+                          alt="Card Back"
+                          className="w-40 h-40 object-contain"
+                        />
+                        <p className="text-center mt-2">Waiting for reveal...</p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Your Cards (face up) */}
+          <div className="mt-8">
+            <h3 className="text-xl mb-4 bg-gray-800 bg-opacity-90 px-4 py-2 rounded inline-block">
+              Your Cards {!isMyTurn() && '(Waiting for opponent...)'}
+            </h3>
+            <div className="grid grid-cols-5 gap-4">
+              {playerDeck.map(card => (
+                <button
+                  key={card.id}
+                  onClick={() => handleCardSelect(card)}
+                  className={`bg-gray-800 p-2 rounded-lg transition-colors
+                    ${playerSelection?.id === card.id ? 'ring-2 ring-pokemon-yellow' : ''}
+                    ${!isMyTurn() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-700'}
+                    ${playerSelection ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={!isMyTurn() || !!playerSelection}
+                >
+                  <img 
+                    src={card.image}
+                    alt={card.name}
+                    className="w-full h-32 object-contain"
+                  />
+                  <h4 className="text-sm font-bold capitalize mt-2">
+                    {card.name}
+                  </h4>
+                  <p className={`text-sm ${getRarityColor(card.rarity)}`}>
+                    {card.rarity}
+                  </p>
+                  <div className="text-sm mt-1">
+                    HP: {card.hp} | ATK: {card.attack} | DEF: {card.defense}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Game Over Display */}
+          {gameOver && (
+            <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+              <div className="bg-gray-800 p-8 rounded-lg text-center">
+                <h2 className="text-3xl mb-4">Game Over!</h2>
+                <p className="text-xl mb-4">
+                  {playerScore > opponentScore 
+                    ? 'You Won!' 
+                    : opponentScore > playerScore 
+                      ? 'Opponent Won!' 
+                      : 'It\'s a Tie!'}
                 </p>
-                <div className="text-sm mt-1">
-                  HP: {card.hp} | ATK: {card.attack} | DEF: {card.defense}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Game Over Display */}
-        {gameOver && (
-          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center">
-            <div className="bg-gray-800 p-8 rounded-lg text-center">
-              <h2 className="text-3xl mb-4">Game Over!</h2>
-              <p className="text-xl mb-4">
-                {player1Score > player2Score 
-                  ? 'You Won!' 
-                  : player2Score > player1Score 
-                    ? 'Opponent Won!' 
-                    : 'It\'s a Tie!'}
-              </p>
-              <p className="mb-4">
-                Final Score: {player1Score} - {player2Score}
-              </p>
-              <button
-                onClick={onExit}
-                className="bg-pokemon-red hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
-              >
-                Return to Lobby
-              </button>
+                <p className="mb-4">
+                  Final Score: {playerScore} - {opponentScore}
+                </p>
+                <button
+                  onClick={onExit}
+                  className="bg-pokemon-red hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                >
+                  Return to Lobby
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
