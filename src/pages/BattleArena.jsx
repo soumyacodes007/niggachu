@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react';
 import { generateInitialDeck } from '../utils/pokemonUtils';
+import { motion } from 'framer-motion';
 
 // Add card back image URL
 const CARD_BACK_IMAGE = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png";
+
+// Add some battle effect images
+const BATTLE_EFFECTS = {
+  ATTACK: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/razor-claw.png",
+  DEFENSE: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/hard-stone.png",
+  HP: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/max-potion.png"
+};
 
 const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress }) => {
   const [playerDeck, setPlayerDeck] = useState([]);
@@ -20,6 +28,11 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
   const [opponent, setOpponent] = useState(null);
   const [gameStarted, setGameStarted] = useState(false);
   const [currentTurn, setCurrentTurn] = useState('creator');
+  const [battleAnimation, setBattleAnimation] = useState(false);
+  const [resultAnimation, setResultAnimation] = useState(false);
+
+  // Error handling state
+  const [hasError, setHasError] = useState(false);
 
   // Get battle state key
   const getBattleStateKey = () => `battle_${battleCode}_state`;
@@ -122,6 +135,17 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
     };
   }, [battleCode, walletAddress]);
 
+  // Error boundary effect
+  useEffect(() => {
+    const handleError = (error) => {
+      console.error("Animation error:", error);
+      setHasError(true);
+    };
+
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
+
   const getRandomProperty = () => {
     const properties = ['hp', 'attack', 'defense'];
     return properties[Math.floor(Math.random() * properties.length)];
@@ -205,89 +229,141 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
   };
 
   const processRound = (creatorCard, joinerCard) => {
-    const creatorValue = creatorCard[selectedProperty];
-    const joinerValue = joinerCard[selectedProperty];
+    try {
+      // Debug the property values being compared
+      console.log("Round comparison:", {
+        property: selectedProperty,
+        creatorCard,
+        joinerCard,
+        creatorValue: creatorCard[selectedProperty],
+        joinerValue: joinerCard[selectedProperty]
+      });
 
-    let winner;
-    let newCreatorScore = isCreator ? playerScore : opponentScore;
-    let newJoinerScore = isCreator ? opponentScore : playerScore;
+      const creatorValue = creatorCard[selectedProperty];
+      const joinerValue = joinerCard[selectedProperty];
 
-    if (creatorValue > joinerValue) {
-      newCreatorScore += 1;
-      winner = 'creator';
-    } else if (joinerValue > creatorValue) {
-      newJoinerScore += 1;
-      winner = 'joiner';
-    } else {
-      winner = 'tie';
-    }
+      let winner;
+      let newCreatorScore = isCreator ? playerScore : opponentScore;
+      let newJoinerScore = isCreator ? opponentScore : playerScore;
 
-    // Set round result for display
-    setRoundResult({
-      winner,
-      property: selectedProperty,
-      creatorValue,
-      joinerValue
-    });
+      // Ensure we're comparing numbers, not strings
+      const numCreatorValue = Number(creatorValue);
+      const numJoinerValue = Number(joinerValue);
 
-    // Update scores in local state based on player role
-    if (isCreator) {
-      setPlayerScore(newCreatorScore);
-      setOpponentScore(newJoinerScore);
-    } else {
-      setPlayerScore(newJoinerScore);
-      setOpponentScore(newCreatorScore);
-    }
+      console.log("Comparing values:", numCreatorValue, "vs", numJoinerValue);
 
-    // Move to next round after delay
-    setTimeout(() => {
-      if (currentRound < 9) {
-        // Clear selections
-        localStorage.removeItem(getCreatorSelectionKey());
-        localStorage.removeItem(getJoinerSelectionKey());
-        
-        // Update game state for next round (only creator needs to do this)
-        const gameState = {
-          currentRound: currentRound + 1,
-          creatorScore: newCreatorScore,
-          joinerScore: newJoinerScore,
-          selectedProperty: getRandomProperty(),
-          currentTurn: 'creator', // Reset turn to creator for next round
-          lastUpdate: Date.now()
-        };
-        localStorage.setItem(getBattleStateKey(), JSON.stringify(gameState));
-
-        // Update decks by removing the selected cards
-        if (isCreator) {
-          setPlayerDeck(prev => prev.filter(card => card.id !== creatorCard.id));
-          if (opponentSelection) {
-            setOpponentDeck(prev => prev.filter(card => card.id !== joinerCard.id));
-          }
-        } else {
-          setPlayerDeck(prev => prev.filter(card => card.id !== joinerCard.id));
-          if (opponentSelection) {
-            setOpponentDeck(prev => prev.filter(card => card.id !== creatorCard.id));
-          }
-        }
-
-        // Reset local state
-        setPlayerSelection(null);
-        setOpponentSelection(null);
-        setRoundResult(null);
-        setCurrentRound(prev => prev + 1);
+      if (numCreatorValue > numJoinerValue) {
+        newCreatorScore += 1;
+        winner = 'creator';
+        console.log("Creator wins this round");
+      } else if (numJoinerValue > numCreatorValue) {
+        newJoinerScore += 1;
+        winner = 'joiner';
+        console.log("Joiner wins this round");
       } else {
-        setGameOver(true);
-        // Handle game over state
-        const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
-        if (battle) {
-          battle.status = 'completed';
-          battle.winner = newCreatorScore > newJoinerScore ? battle.creator : battle.joiner;
-          const battles = JSON.parse(localStorage.getItem('activeBattles'));
-          battles[battleCode] = battle;
-          localStorage.setItem('activeBattles', JSON.stringify(battles));
-        }
+        winner = 'tie';
+        console.log("Round is a tie");
       }
-    }, 3000);
+
+      // Start battle animation sequence with safer timing
+      setBattleAnimation(true);
+      
+      setTimeout(() => {
+        try {
+          setBattleAnimation(false);
+          setResultAnimation(true);
+          
+          // Set round result for display
+          setRoundResult({
+            winner,
+            property: selectedProperty,
+            creatorValue: numCreatorValue,
+            joinerValue: numJoinerValue
+          });
+
+          // Update scores in local state based on player role
+          if (isCreator) {
+            setPlayerScore(newCreatorScore);
+            setOpponentScore(newJoinerScore);
+          } else {
+            setPlayerScore(newJoinerScore);
+            setOpponentScore(newCreatorScore);
+          }
+
+          // Log the updated scores for debugging
+          console.log("Updated scores:", {
+            creatorScore: newCreatorScore,
+            joinerScore: newJoinerScore,
+            isCreator,
+            playerScore: isCreator ? newCreatorScore : newJoinerScore,
+            opponentScore: isCreator ? newJoinerScore : newCreatorScore
+          });
+        } catch (error) {
+          console.error("Animation error:", error);
+          setHasError(true);
+        }
+      }, 1500);
+
+      // Move to next round after delay
+      setTimeout(() => {
+        try {
+          setResultAnimation(false);
+          
+          if (currentRound < 9) {
+            // Clear selections
+            localStorage.removeItem(getCreatorSelectionKey());
+            localStorage.removeItem(getJoinerSelectionKey());
+            
+            // Update game state for next round
+            const gameState = {
+              currentRound: currentRound + 1,
+              creatorScore: newCreatorScore,
+              joinerScore: newJoinerScore,
+              selectedProperty: getRandomProperty(),
+              currentTurn: 'creator', // Reset turn to creator for next round
+              lastUpdate: Date.now()
+            };
+            localStorage.setItem(getBattleStateKey(), JSON.stringify(gameState));
+
+            // Update decks by removing the selected cards
+            if (isCreator) {
+              setPlayerDeck(prev => prev.filter(card => card.id !== creatorCard.id));
+              if (opponentSelection) {
+                setOpponentDeck(prev => prev.filter(card => card.id !== joinerCard.id));
+              }
+            } else {
+              setPlayerDeck(prev => prev.filter(card => card.id !== joinerCard.id));
+              if (opponentSelection) {
+                setOpponentDeck(prev => prev.filter(card => card.id !== creatorCard.id));
+              }
+            }
+
+            // Reset local state
+            setPlayerSelection(null);
+            setOpponentSelection(null);
+            setRoundResult(null);
+            setCurrentRound(prev => prev + 1);
+          } else {
+            setGameOver(true);
+            // Handle game over state
+            const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
+            if (battle) {
+              battle.status = 'completed';
+              battle.winner = newCreatorScore > newJoinerScore ? battle.creator : battle.joiner;
+              const battles = JSON.parse(localStorage.getItem('activeBattles'));
+              battles[battleCode] = battle;
+              localStorage.setItem('activeBattles', JSON.stringify(battles));
+            }
+          }
+        } catch (error) {
+          console.error("Round transition error:", error);
+          setHasError(true);
+        }
+      }, 3000);
+    } catch (error) {
+      console.error("Process round error:", error);
+      setHasError(true);
+    }
   };
 
   const getRarityColor = (rarity) => {
@@ -322,6 +398,30 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
            roundResult.winner === 'tie' ? 'text-yellow-400' : 
            'text-red-400';
   };
+
+  // If we have an error, show a simpler UI to recover
+  if (hasError) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+        <div className="text-center bg-gray-800 p-8 rounded-lg">
+          <h2 className="text-xl mb-4">Something went wrong with animations</h2>
+          <p className="mb-4">We've encountered an issue with the battle animations.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-pokemon-red hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+          >
+            Reload Game
+          </button>
+          <button 
+            onClick={onExit} 
+            className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded ml-4"
+          >
+            Return to Lobby
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -363,6 +463,8 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
             <div>Current Round: {currentRound + 1}/10</div>
             <div>Your Deck Size: {playerDeck.length}</div>
             <div>Opponent Deck Size: {opponentDeck.length}</div>
+            {selectedProperty && <div>Current Property: {selectedProperty}</div>}
+            {roundResult && <div>Last Round Winner: {roundResult.winner}</div>}
           </div>
 
           {/* Player role indicator */}
@@ -400,9 +502,16 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
             <div className="bg-gray-800 bg-opacity-90 p-4 rounded-lg mb-6 text-center">
               <h3 className="text-xl mb-2">Round Result</h3>
               <p className="mb-2">
-                {selectedProperty}: {isCreator ? roundResult.creatorValue : roundResult.joinerValue} vs {isCreator ? roundResult.joinerValue : roundResult.creatorValue}
+                {selectedProperty?.toUpperCase()}: 
+                <span className="font-bold ml-1">
+                  {isCreator ? roundResult.creatorValue : roundResult.joinerValue}
+                </span> 
+                <span className="mx-2">vs</span> 
+                <span className="font-bold">
+                  {isCreator ? roundResult.joinerValue : roundResult.creatorValue}
+                </span>
               </p>
-              <p className={`text-lg ${getWinnerClass()}`}>
+              <p className={`text-lg ${getWinnerClass()} font-bold`}>
                 {getWinnerMessage()}
               </p>
             </div>
@@ -434,10 +543,18 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
           {(playerSelection || opponentSelection) && (
             <div className="my-8">
               <h3 className="text-xl mb-4 bg-gray-800 bg-opacity-90 px-4 py-2 rounded inline-block">Cards in Play</h3>
-              <div className="flex justify-center gap-8">
+              <div className="flex justify-center gap-8 items-center">
                 {/* Your Selected Card */}
                 {playerSelection && (
-                  <div className="bg-gray-800 p-4 rounded-lg transform transition-transform hover:scale-105">
+                  <motion.div 
+                    className="bg-gray-800 p-4 rounded-lg"
+                    initial={{ scale: 0.9 }}
+                    animate={{ 
+                      scale: battleAnimation ? 1.05 : 1, 
+                      x: battleAnimation ? -10 : 0 
+                    }}
+                    transition={{ duration: 0.3 }}
+                  >
                     <img 
                       src={playerSelection.image}
                       alt={playerSelection.name}
@@ -449,22 +566,86 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                     <p className={getRarityColor(playerSelection.rarity)}>
                       {playerSelection.rarity}
                     </p>
-                    <p>
-                      {selectedProperty}: {playerSelection[selectedProperty]}
+                    {/* Simplified stat display */}
+                    <p className={selectedProperty === "attack" ? "text-red-400 font-bold" : ""}>
+                      Attack: {playerSelection.attack}
                     </p>
-                  </div>
+                    <p className={selectedProperty === "defense" ? "text-blue-400 font-bold" : ""}>
+                      Defense: {playerSelection.defense}
+                    </p>
+                    <p className={selectedProperty === "hp" ? "text-green-400 font-bold" : ""}>
+                      HP: {playerSelection.hp}
+                    </p>
+                  </motion.div>
                 )}
 
-                {/* VS Indicator */}
-                {playerSelection && opponentSelection && (
-                  <div className="flex items-center">
-                    <span className="text-4xl text-pokemon-yellow font-bold">VS</span>
-                  </div>
-                )}
+                {/* VS and Battle Effects - Simplified */}
+                <div className="flex flex-col items-center justify-center relative">
+                  {playerSelection && opponentSelection && (
+                    <>
+                      <motion.span 
+                        className="text-4xl text-pokemon-yellow font-bold"
+                        animate={{ 
+                          scale: battleAnimation ? [1, 1.2, 0.8] : 1,
+                          opacity: battleAnimation ? 0.7 : 1
+                        }}
+                        transition={{ duration: 0.5 }}
+                      >
+                        VS
+                      </motion.span>
+                      
+                      {/* Simplified battle effect */}
+                      {battleAnimation && (
+                        <motion.div 
+                          className="absolute"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                        >
+                          <img 
+                            src={BATTLE_EFFECTS[selectedProperty?.toUpperCase()]} 
+                            alt="Battle Effect" 
+                            className="w-16 h-16 object-contain"
+                          />
+                        </motion.div>
+                      )}
 
-                {/* Opponent's Selected Card */}
+                      {/* Result indicator - simplified */}
+                      {resultAnimation && roundResult && (
+                        <motion.div 
+                          className={`absolute top-0 text-xl font-bold ${
+                            roundResult.winner === 'tie' 
+                              ? 'text-yellow-400' 
+                              : ((isCreator && roundResult.winner === 'creator') || 
+                                 (!isCreator && roundResult.winner === 'joiner')) 
+                                ? 'text-green-400' 
+                                : 'text-red-400'
+                          }`}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                        >
+                          {roundResult.winner === 'tie' 
+                            ? 'TIE!' 
+                            : ((isCreator && roundResult.winner === 'creator') || 
+                               (!isCreator && roundResult.winner === 'joiner')) 
+                              ? 'WIN!' 
+                              : 'LOSE!'}
+                        </motion.div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Opponent's Selected Card - Simplified */}
                 {opponentSelection && (
-                  <div className="bg-gray-800 p-4 rounded-lg transform transition-transform hover:scale-105">
+                  <motion.div 
+                    className="bg-gray-800 p-4 rounded-lg"
+                    initial={{ scale: 0.9 }}
+                    animate={{ 
+                      scale: battleAnimation ? 1.05 : 1, 
+                      x: battleAnimation ? 10 : 0 
+                    }}
+                    transition={{ duration: 0.3 }}
+                  >
                     {roundResult ? (
                       <>
                         <img 
@@ -478,8 +659,15 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                         <p className={getRarityColor(opponentSelection.rarity)}>
                           {opponentSelection.rarity}
                         </p>
-                        <p>
-                          {selectedProperty}: {opponentSelection[selectedProperty]}
+                        {/* Simplified stat display */}
+                        <p className={selectedProperty === "attack" ? "text-red-400 font-bold" : ""}>
+                          Attack: {opponentSelection.attack}
+                        </p>
+                        <p className={selectedProperty === "defense" ? "text-blue-400 font-bold" : ""}>
+                          Defense: {opponentSelection.defense}
+                        </p>
+                        <p className={selectedProperty === "hp" ? "text-green-400 font-bold" : ""}>
+                          HP: {opponentSelection.hp}
                         </p>
                       </>
                     ) : (
@@ -492,7 +680,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                         <p className="text-center mt-2">Waiting for reveal...</p>
                       </>
                     )}
-                  </div>
+                  </motion.div>
                 )}
               </div>
             </div>
