@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { generateInitialDeck } from '../utils/pokemonUtils';
 
+// Add card back image URL
+const CARD_BACK_IMAGE = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png";
+
 const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress }) => {
   const [player1Deck, setPlayer1Deck] = useState([]);
   const [player2Deck, setPlayer2Deck] = useState([]);
@@ -8,46 +11,78 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
   const [currentRound, setCurrentRound] = useState(0);
   const [player1Score, setPlayer1Score] = useState(0);
   const [player2Score, setPlayer2Score] = useState(0);
-  const [selectedProperty, setSelectedProperty] = useState(null); // Random property for the round
+  const [selectedProperty, setSelectedProperty] = useState(null);
   const [player1Selection, setPlayer1Selection] = useState(null);
   const [player2Selection, setPlayer2Selection] = useState(null);
   const [roundResult, setRoundResult] = useState(null);
   const [gameOver, setGameOver] = useState(false);
-  const [selectionPhase, setSelectionPhase] = useState(true); // true = selecting cards, false = showing result
   const [isCreator, setIsCreator] = useState(false);
+  const [opponent, setOpponent] = useState(null);
   const [gameStarted, setGameStarted] = useState(false);
 
+  // Get battle state key
+  const getBattleStateKey = () => `battle_${battleCode}_state`;
+  const getPlayer1SelectionKey = () => `battle_${battleCode}_player1_selection`;
+  const getPlayer2SelectionKey = () => `battle_${battleCode}_player2_selection`;
+  const getDecksKey = () => `battle_${battleCode}_decks`;
+
   useEffect(() => {
-    // Check if current player is creator or joiner
     const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
-    setIsCreator(battle?.creator === walletAddress);
+    if (!battle) {
+      console.error('Battle not found!');
+      onExit();
+      return;
+    }
+
+    // Add debug logging
+    console.log('Battle State:', {
+      battleCode,
+      battle,
+      walletAddress,
+      isCreator: battle.creator === walletAddress,
+      opponent: battle.creator === walletAddress ? battle.joiner : battle.creator
+    });
+
+    const isCreatorPlayer = battle.creator === walletAddress;
+    setIsCreator(isCreatorPlayer);
+    setOpponent(isCreatorPlayer ? battle.joiner : battle.creator);
 
     const initializeGame = async () => {
       setIsLoading(true);
       try {
-        // Generate decks only if creator or if decks don't exist yet
-        if (isCreator || !localStorage.getItem(`battle_${battleCode}_deck1`)) {
+        // Only creator initializes the decks
+        if (isCreatorPlayer) {
           const deck1 = await generateInitialDeck();
           const deck2 = await generateInitialDeck();
           
-          localStorage.setItem(`battle_${battleCode}_deck1`, JSON.stringify(deck1));
-          localStorage.setItem(`battle_${battleCode}_deck2`, JSON.stringify(deck2));
+          const decks = { deck1, deck2 };
+          localStorage.setItem(getDecksKey(), JSON.stringify(decks));
+          
+          // Initialize game state
+          const initialState = {
+            currentRound: 0,
+            player1Score: 0,
+            player2Score: 0,
+            selectedProperty: getRandomProperty(),
+            lastUpdate: Date.now()
+          };
+          localStorage.setItem(getBattleStateKey(), JSON.stringify(initialState));
         }
 
-        // Load decks from localStorage
-        const deck1 = JSON.parse(localStorage.getItem(`battle_${battleCode}_deck1`));
-        const deck2 = JSON.parse(localStorage.getItem(`battle_${battleCode}_deck2`));
-
-        // Set initial decks based on player role
-        if (isCreator) {
-          setPlayer1Deck(deck1);
-          setPlayer2Deck(deck2);
-        } else {
-          setPlayer1Deck(deck2);
-          setPlayer2Deck(deck1);
+        // Wait for decks to be available
+        let attempts = 0;
+        const maxAttempts = 10;
+        while (attempts < maxAttempts) {
+          const decks = JSON.parse(localStorage.getItem(getDecksKey()));
+          if (decks) {
+            setPlayer1Deck(isCreatorPlayer ? decks.deck1 : decks.deck2);
+            setPlayer2Deck(isCreatorPlayer ? decks.deck2 : decks.deck1);
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          attempts++;
         }
-        
-        setRandomProperty();
+
         setGameStarted(true);
       } catch (error) {
         console.error('Error initializing game:', error);
@@ -58,64 +93,67 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
     initializeGame();
 
     // Set up game state sync
-    const syncInterval = setInterval(() => {
-      syncGameState();
-    }, 1000);
+    const syncInterval = setInterval(syncGameState, 1000);
 
     return () => {
       clearInterval(syncInterval);
-      // Cleanup game data when component unmounts
-      if (isCreator) {
-        localStorage.removeItem(`battle_${battleCode}_deck1`);
-        localStorage.removeItem(`battle_${battleCode}_deck2`);
-        localStorage.removeItem(`battle_${battleCode}_state`);
+      // Only creator cleans up the game data
+      if (isCreatorPlayer) {
+        localStorage.removeItem(getDecksKey());
+        localStorage.removeItem(getBattleStateKey());
+        localStorage.removeItem(getPlayer1SelectionKey());
+        localStorage.removeItem(getPlayer2SelectionKey());
       }
     };
-  }, [battleCode, walletAddress, isCreator]);
+  }, [battleCode, walletAddress]);
 
-  const setRandomProperty = () => {
-        const properties = ['hp', 'attack', 'defense'];
-        const randomProperty = properties[Math.floor(Math.random() * properties.length)];
-    setSelectedProperty(randomProperty);
+  const getRandomProperty = () => {
+    const properties = ['hp', 'attack', 'defense'];
+    return properties[Math.floor(Math.random() * properties.length)];
   };
 
   const handleCardSelect = (card) => {
-    if (player1Selection) return;
+    if ((isCreator && player1Selection) || (!isCreator && player2Selection)) return;
 
-    setPlayer1Selection(card);
-    
-    // Store selection based on player role
-    const selectionKey = isCreator ? 'player1_selection' : 'player2_selection';
-    localStorage.setItem(`battle_${battleCode}_${selectionKey}`, JSON.stringify(card));
-  };
+    const selectionKey = isCreator ? getPlayer1SelectionKey() : getPlayer2SelectionKey();
+    localStorage.setItem(selectionKey, JSON.stringify(card));
 
-  const syncGameState = () => {
-    const gameState = JSON.parse(localStorage.getItem(`battle_${battleCode}_state`)) || {};
-    
-    // Update game state based on stored data
-    if (gameState.currentRound !== undefined) setCurrentRound(gameState.currentRound);
-    if (gameState.selectedProperty) setSelectedProperty(gameState.selectedProperty);
-    if (gameState.player1Score !== undefined) setPlayer1Score(gameState.player1Score);
-    if (gameState.player2Score !== undefined) setPlayer2Score(gameState.player2Score);
-
-    // Check for opponent's card selection
-    const opponentKey = isCreator ? 'player2_selection' : 'player1_selection';
-    const myKey = isCreator ? 'player1_selection' : 'player2_selection';
-    
-    const opponentSelection = localStorage.getItem(`battle_${battleCode}_${opponentKey}`);
-    const mySelection = localStorage.getItem(`battle_${battleCode}_${myKey}`);
-    
-    // If both players have selected cards and we haven't processed the result yet
-    if (opponentSelection && mySelection && !roundResult) {
-      const opponentCard = JSON.parse(opponentSelection);
-      const myCard = JSON.parse(mySelection);
-      
-      setPlayer2Selection(opponentCard);
-      compareCards(myCard, opponentCard);
+    if (isCreator) {
+      setPlayer1Selection(card);
+    } else {
+      setPlayer2Selection(card);
     }
   };
 
-  const compareCards = (p1Card, p2Card) => {
+  const syncGameState = () => {
+    const gameState = JSON.parse(localStorage.getItem(getBattleStateKey()));
+    if (!gameState) return;
+
+    // Update game state
+    setCurrentRound(gameState.currentRound);
+    setSelectedProperty(gameState.selectedProperty);
+    setPlayer1Score(gameState.player1Score);
+    setPlayer2Score(gameState.player2Score);
+
+    // Check for card selections
+    const p1Selection = JSON.parse(localStorage.getItem(getPlayer1SelectionKey()));
+    const p2Selection = JSON.parse(localStorage.getItem(getPlayer2SelectionKey()));
+
+    if (isCreator) {
+      setPlayer1Selection(p1Selection);
+      setPlayer2Selection(p2Selection);
+    } else {
+      setPlayer1Selection(p2Selection);
+      setPlayer2Selection(p1Selection);
+    }
+
+    // Process round if both players have selected
+    if (p1Selection && p2Selection && !roundResult) {
+      processRound(p1Selection, p2Selection);
+    }
+  };
+
+  const processRound = (p1Card, p2Card) => {
     const p1Value = p1Card[selectedProperty];
     const p2Value = p2Card[selectedProperty];
 
@@ -133,17 +171,17 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
       result = 'tie';
     }
 
-    setPlayer1Score(newPlayer1Score);
-    setPlayer2Score(newPlayer2Score);
-
-    // Update game state in localStorage
-    const gameState = {
-      currentRound,
-      selectedProperty,
-      player1Score: newPlayer1Score,
-      player2Score: newPlayer2Score,
-    };
-    localStorage.setItem(`battle_${battleCode}_state`, JSON.stringify(gameState));
+    // Only creator updates the shared state
+    if (isCreator) {
+      const gameState = {
+        currentRound,
+        selectedProperty,
+        player1Score: newPlayer1Score,
+        player2Score: newPlayer2Score,
+        lastUpdate: Date.now()
+      };
+      localStorage.setItem(getBattleStateKey(), JSON.stringify(gameState));
+    }
 
     setRoundResult({
       winner: result,
@@ -156,28 +194,41 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
     setTimeout(() => {
       if (currentRound < 9) {
         // Remove selected cards from decks
-        setPlayer1Deck(prev => prev.filter(card => card.id !== p1Card.id));
-        setPlayer2Deck(prev => prev.filter(card => card.id !== p2Card.id));
+        setPlayer1Deck(prev => prev.filter(card => card.id !== (isCreator ? p1Card.id : p2Card.id)));
+        setPlayer2Deck(prev => prev.filter(card => card.id !== (isCreator ? p2Card.id : p1Card.id)));
         
-        // Clear selections from localStorage
-        localStorage.removeItem(`battle_${battleCode}_player1_selection`);
-        localStorage.removeItem(`battle_${battleCode}_player2_selection`);
+        // Clear selections
+        if (isCreator) {
+          localStorage.removeItem(getPlayer1SelectionKey());
+          localStorage.removeItem(getPlayer2SelectionKey());
+          
+          // Update game state for next round
+          const gameState = {
+            currentRound: currentRound + 1,
+            selectedProperty: getRandomProperty(),
+            player1Score: newPlayer1Score,
+            player2Score: newPlayer2Score,
+            lastUpdate: Date.now()
+          };
+          localStorage.setItem(getBattleStateKey(), JSON.stringify(gameState));
+        }
         
-        // Reset for next round
-        const nextRound = currentRound + 1;
-        setCurrentRound(nextRound);
         setPlayer1Selection(null);
         setPlayer2Selection(null);
         setRoundResult(null);
-        setRandomProperty();
-        
-        // Update game state
-        localStorage.setItem(`battle_${battleCode}_state`, JSON.stringify({
-          ...gameState,
-          currentRound: nextRound,
-        }));
       } else {
         setGameOver(true);
+        // Handle game over state
+        if (isCreator) {
+          const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
+          if (battle) {
+            battle.status = 'completed';
+            battle.winner = newPlayer1Score > newPlayer2Score ? battle.creator : battle.joiner;
+            const battles = JSON.parse(localStorage.getItem('activeBattles'));
+            battles[battleCode] = battle;
+            localStorage.setItem('activeBattles', JSON.stringify(battles));
+          }
+        }
       }
     }, 3000);
   };
@@ -207,6 +258,19 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4">
       <div className="container mx-auto">
+        {/* Debug Information */}
+        <div className="bg-gray-800 p-4 rounded-lg mb-4 text-sm font-mono">
+          <h3 className="text-lg font-bold mb-2">Debug Info:</h3>
+          <div>Battle Code: {battleCode}</div>
+          <div>Your Address: {walletAddress}</div>
+          <div>Role: {isCreator ? 'Creator (Player 1)' : 'Joiner (Player 2)'}</div>
+          <div>Opponent Address: {opponent || 'Waiting for opponent...'}</div>
+          <div>Game Started: {gameStarted ? 'Yes' : 'No'}</div>
+          <div>Current Round: {currentRound + 1}/10</div>
+          <div>Your Deck Size: {player1Deck.length}</div>
+          <div>Opponent Deck Size: {player2Deck.length}</div>
+        </div>
+
         {/* Add player role indicator */}
         <div className="text-center mb-4">
           <span className="bg-gray-800 px-3 py-1 rounded-full text-sm">
@@ -249,23 +313,40 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
           </div>
         )}
 
-        {/* Card Selection Area */}
-        <div className="mb-6">
-          <h3 className="text-xl mb-4">
-            {selectionPhase 
-              ? 'Select your card for this round' 
-              : 'Cards in play'}
-          </h3>
-          
-          {/* Selected Cards Display */}
-          {(player1Selection || player2Selection) && (
-            <div className="flex justify-center gap-8 mb-6">
+        {/* Opponent's Cards (face down) */}
+        <div className="mb-8">
+          <h3 className="text-xl mb-4">Opponent's Cards</h3>
+          <div className="grid grid-cols-5 gap-4">
+            {player2Deck.map((card, index) => (
+              <div
+                key={card.id}
+                className="bg-gray-800 p-2 rounded-lg relative transform hover:scale-105 transition-transform"
+              >
+                <img 
+                  src={CARD_BACK_IMAGE}
+                  alt="Card Back"
+                  className="w-full h-32 object-contain opacity-90"
+                />
+                {player2Selection?.id === card.id && (
+                  <div className="absolute inset-0 border-2 border-pokemon-yellow rounded-lg"></div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Selected Cards in Play */}
+        {(player1Selection || player2Selection) && (
+          <div className="my-8">
+            <h3 className="text-xl mb-4">Cards in Play</h3>
+            <div className="flex justify-center gap-8">
+              {/* Your Selected Card */}
               {player1Selection && (
-                <div className="bg-gray-800 p-4 rounded-lg">
+                <div className="bg-gray-800 p-4 rounded-lg transform transition-transform hover:scale-105">
                   <img 
                     src={player1Selection.image}
                     alt={player1Selection.name}
-                    className="w-40 h-40"
+                    className="w-40 h-40 object-contain"
                   />
                   <h4 className="text-lg font-bold capitalize mt-2">
                     {player1Selection.name}
@@ -278,57 +359,106 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                   </p>
                 </div>
               )}
-              {player2Selection && (
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <img 
-                    src={player2Selection.image}
-                    alt={player2Selection.name}
-                    className="w-40 h-40"
-                  />
-                  <h4 className="text-lg font-bold capitalize mt-2">
-                    {player2Selection.name}
-                  </h4>
-                  <p className={getRarityColor(player2Selection.rarity)}>
-                    {player2Selection.rarity}
-                  </p>
-                  <p>
-                    {selectedProperty}: {player2Selection[selectedProperty]}
-                  </p>
-              </div>
-            )}
-          </div>
-          )}
 
-          {/* Available Cards */}
-          {selectionPhase && (
-            <div className="grid grid-cols-5 gap-4">
-              {player1Deck.map(card => (
-                <button
-                  key={card.id}
-                  onClick={() => handleCardSelect(card)}
-                  className={`bg-gray-800 p-2 rounded-lg hover:bg-gray-700 transition-colors
-                    ${player1Selection?.id === card.id ? 'ring-2 ring-pokemon-yellow' : ''}`}
-                  disabled={!!player1Selection}
-                >
-                  <img 
-                    src={card.image}
-                    alt={card.name}
-                    className="w-full h-32 object-contain"
-                  />
-                  <h4 className="text-sm font-bold capitalize mt-2">
-                    {card.name}
-                  </h4>
-                  <p className={`text-sm ${getRarityColor(card.rarity)}`}>
-                    {card.rarity}
-                  </p>
-                  <div className="text-sm mt-1">
-                    HP: {card.hp} | ATK: {card.attack} | DEF: {card.defense}
-                  </div>
-                </button>
-              ))}
-              </div>
-            )}
+              {/* VS Indicator */}
+              {player1Selection && player2Selection && (
+                <div className="flex items-center">
+                  <span className="text-4xl text-pokemon-yellow font-bold">VS</span>
+                </div>
+              )}
+
+              {/* Opponent's Selected Card */}
+              {player2Selection && (
+                <div className="bg-gray-800 p-4 rounded-lg transform transition-transform hover:scale-105">
+                  {roundResult ? (
+                    <>
+                      <img 
+                        src={player2Selection.image}
+                        alt={player2Selection.name}
+                        className="w-40 h-40 object-contain"
+                      />
+                      <h4 className="text-lg font-bold capitalize mt-2">
+                        {player2Selection.name}
+                      </h4>
+                      <p className={getRarityColor(player2Selection.rarity)}>
+                        {player2Selection.rarity}
+                      </p>
+                      <p>
+                        {selectedProperty}: {player2Selection[selectedProperty]}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <img 
+                        src={CARD_BACK_IMAGE}
+                        alt="Card Back"
+                        className="w-40 h-40 object-contain"
+                      />
+                      <p className="text-center mt-2">Waiting for reveal...</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Your Cards (face up) */}
+        <div className="mt-8">
+          <h3 className="text-xl mb-4">Your Cards</h3>
+          <div className="grid grid-cols-5 gap-4">
+            {player1Deck.map(card => (
+              <button
+                key={card.id}
+                onClick={() => handleCardSelect(card)}
+                className={`bg-gray-800 p-2 rounded-lg hover:bg-gray-700 transition-colors
+                  ${player1Selection?.id === card.id ? 'ring-2 ring-pokemon-yellow' : ''}
+                  ${!isCreator && player2Selection ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={!!player1Selection || (!isCreator && player2Selection)}
+              >
+                <img 
+                  src={card.image}
+                  alt={card.name}
+                  className="w-full h-32 object-contain"
+                />
+                <h4 className="text-sm font-bold capitalize mt-2">
+                  {card.name}
+                </h4>
+                <p className={`text-sm ${getRarityColor(card.rarity)}`}>
+                  {card.rarity}
+                </p>
+                <div className="text-sm mt-1">
+                  HP: {card.hp} | ATK: {card.attack} | DEF: {card.defense}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* Game Over Display */}
+        {gameOver && (
+          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center">
+            <div className="bg-gray-800 p-8 rounded-lg text-center">
+              <h2 className="text-3xl mb-4">Game Over!</h2>
+              <p className="text-xl mb-4">
+                {player1Score > player2Score 
+                  ? 'You Won!' 
+                  : player2Score > player1Score 
+                    ? 'Opponent Won!' 
+                    : 'It\'s a Tie!'}
+              </p>
+              <p className="mb-4">
+                Final Score: {player1Score} - {player2Score}
+              </p>
+              <button
+                onClick={onExit}
+                className="bg-pokemon-red hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+              >
+                Return to Lobby
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
