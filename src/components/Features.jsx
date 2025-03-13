@@ -39,15 +39,9 @@ function Features() {
   ];
 
   return (
-    <section id="features" className="py-16 bg-gray-900">
+    <section id="features" className="game-features">
       <div className="container mx-auto px-4">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">Game Features</h2>
-          <p className="text-xl text-gray-400 max-w-3xl mx-auto">
-            Experience the next generation of Pokémon card gaming with blockchain technology
-          </p>
-        </div>
-        
+        <h2 className="text-4xl font-bold text-white mb-12">Game Features</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {features.map((feature, index) => (
             <div key={index} className="card p-6 hover:border-pokemon-yellow transition-colors duration-300">

@@ -54,4 +54,12 @@
       background-position: 200% 0;
     }
   }
+
+  .game-features {
+    position: relative;
+    z-index: 20;
+    margin-top: -100px; /* Adjust based on your needs */
+    padding-top: 100px;
+    background: rgb(17, 24, 39);
+  }
 }

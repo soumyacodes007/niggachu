@@ -888,7 +888,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress,
                   Return to Lobby
                 </button>
               </div>
-            </div>
+              </div>
             )}
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import FloatingPokemon from './FloatingPokemon';
+import Charizard3D from './Charizard3D';
 
 function Hero() {
   const [featuredPokemon, setFeaturedPokemon] = useState(null);
@@ -19,31 +20,14 @@ function Hero() {
   }, []);
 
   return (
-    <section id="home" className="pt-24 pb-16 md:pt-32 md:pb-24 overflow-hidden">
-      <div className="container mx-auto px-4">
-        <div className="flex flex-col md:flex-row items-center">
-          <motion.div 
-            className="md:w-1/2 mb-10 md:mb-0"
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8 }}
-          >
-            <motion.h1 
-              className="text-4xl md:text-6xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-pokemon-yellow to-pokemon-gold"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-            >
-              Pokémon Card Game
-              <motion.span 
-                className="block text-pokemon-red"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.4 }}
-              >
-                on Web3
-              </motion.span>
-            </motion.h1>
+    <section className="relative min-h-screen bg-gray-900 overflow-hidden">
+      <div className="container mx-auto px-4 pt-20 pb-32">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+          {/* Left side - Text content */}
+          <div className="z-10">
+            <h1 className="text-4xl md:text-6xl font-bold text-pokemon-yellow mb-6">
+              Welcome to the future of Pokemon Gaming
+            </h1>
             <motion.p 
               className="text-xl text-gray-300 mb-8"
               initial={{ opacity: 0, y: 20 }}
@@ -74,24 +58,12 @@ function Hero() {
                 Learn More
               </motion.button>
             </motion.div>
-          </motion.div>
+          </div>
           
-          <motion.div 
-            className="md:w-1/2 flex justify-center"
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8 }}
-          >
-            {featuredPokemon ? (
-              <FloatingPokemon pokemon={featuredPokemon} />
-            ) : (
-              <div className="w-64 h-64 md:w-80 md:h-80 bg-gray-800 rounded-full animate-pulse flex items-center justify-center">
-                <svg className="w-12 h-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                </svg>
-              </div>
-            )}
-          </motion.div>
+          {/* Right side - Charizard Model */}
+          <div className="absolute lg:relative right-[-20%] lg:right-0 top-1/2 lg:top-0 transform -translate-y-1/2 lg:translate-y-0 w-[800px] h-[800px] lg:w-full lg:h-full">
+            <Charizard3D />
+          </div>
         </div>
       </div>
       
