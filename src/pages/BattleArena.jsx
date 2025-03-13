@@ -12,7 +12,7 @@ const BATTLE_EFFECTS = {
   HP: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/max-potion.png"
 };
 
-const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress }) => {
+const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress, contractInstance }) => {
   const [playerDeck, setPlayerDeck] = useState([]);
   const [opponentDeck, setOpponentDeck] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,6 +48,43 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
       return currentTurn === 'joiner';
     }
   };
+
+  useEffect(() => {
+    const verifyBattleStatus = async () => {
+      if (contractInstance && battleCode) {
+        try {
+          // Verify the battle exists on the blockchain
+          const battleExists = await contractInstance.methods.battleExists(battleCode).call();
+          const battleDetails = await contractInstance.methods.getBattleInfo(battleCode).call();
+          
+          console.log("Battle verification:", { battleExists, battleDetails });
+          
+          if (!battleExists) {
+            alert("This battle no longer exists on the blockchain!");
+            onExit();
+            return;
+          }
+          
+          // Determine player roles based on blockchain data
+          if (battleDetails.creator.toLowerCase() === walletAddress.toLowerCase()) {
+            setPlayerRole('creator');
+          } else if (battleDetails.joiner.toLowerCase() === walletAddress.toLowerCase()) {
+            setPlayerRole('joiner');
+          } else {
+            alert("You are not a participant in this battle!");
+            onExit();
+          }
+          
+          // Initialize game with contract data
+          setCurrentTurn(battleDetails.currentTurn);
+        } catch (error) {
+          console.error("Error verifying battle status:", error);
+        }
+      }
+    };
+    
+    verifyBattleStatus();
+  }, [contractInstance, battleCode, walletAddress]);
 
   useEffect(() => {
     const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
@@ -102,7 +139,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
             if (isCreatorPlayer) {
               setPlayerDeck(decks.deck1);
               setOpponentDeck(decks.deck2);
-            } else {
+        } else {
               setPlayerDeck(decks.deck2);
               setOpponentDeck(decks.deck1);
             }
@@ -147,7 +184,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
   }, []);
 
   const getRandomProperty = () => {
-    const properties = ['hp', 'attack', 'defense'];
+        const properties = ['hp', 'attack', 'defense'];
     return properties[Math.floor(Math.random() * properties.length)];
   };
 
@@ -262,7 +299,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
         newJoinerScore += 1;
         winner = 'joiner';
         console.log("Joiner wins this round");
-      } else {
+    } else {
         winner = 'tie';
         console.log("Round is a tie");
       }
@@ -276,9 +313,9 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
           setResultAnimation(true);
           
           // Set round result for display
-          setRoundResult({
+    setRoundResult({
             winner,
-            property: selectedProperty,
+      property: selectedProperty,
             creatorValue: numCreatorValue,
             joinerValue: numJoinerValue
           });
@@ -306,12 +343,12 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
         }
       }, 1500);
 
-      // Move to next round after delay
-      setTimeout(() => {
+    // Move to next round after delay
+    setTimeout(() => {
         try {
           setResultAnimation(false);
           
-          if (currentRound < 9) {
+      if (currentRound < 9) {
             // Clear selections
             localStorage.removeItem(getCreatorSelectionKey());
             localStorage.removeItem(getJoinerSelectionKey());
@@ -343,10 +380,10 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
             // Reset local state
             setPlayerSelection(null);
             setOpponentSelection(null);
-            setRoundResult(null);
+        setRoundResult(null);
             setCurrentRound(prev => prev + 1);
-          } else {
-            setGameOver(true);
+      } else {
+        setGameOver(true);
             // Handle game over state
             const battle = JSON.parse(localStorage.getItem('activeBattles'))?.[battleCode];
             if (battle) {
@@ -542,7 +579,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
 
       {/* Content Overlay */}
       <div className="relative z-10 min-h-screen bg-black bg-opacity-70 text-white p-4">
-        <div className="container mx-auto">
+      <div className="container mx-auto">
           {/* Debug Information */}
           <div className="bg-gray-800 bg-opacity-90 p-4 rounded-lg mb-4 text-sm font-mono">
             <h3 className="text-lg font-bold mb-2">Debug Info:</h3>
@@ -568,33 +605,33 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
           </div>
 
           {/* Turn indicator */}
-          <div className="text-center mb-4">
+        <div className="text-center mb-4">
             <span className={`px-4 py-2 rounded-full ${
               isMyTurn() 
                 ? 'bg-pokemon-red text-white' 
                 : 'bg-gray-800 bg-opacity-90 text-gray-400'
             }`}>
               {isMyTurn() ? "Your Turn!" : "Opponent's Turn"}
-            </span>
-          </div>
+          </span>
+        </div>
 
-          {/* Header with scores and round info */}
-          <div className="flex justify-between items-center mb-6">
+        {/* Header with scores and round info */}
+        <div className="flex justify-between items-center mb-6">
             <div className="text-xl bg-gray-800 bg-opacity-90 px-4 py-2 rounded">Your Score: {playerScore}</div>
             <div className="text-center">
               <div className="text-xl mb-2 bg-gray-800 bg-opacity-90 px-4 py-2 rounded">Round {currentRound + 1}/10</div>
               <div className="text-lg text-pokemon-yellow bg-gray-800 bg-opacity-90 px-4 py-2 rounded">
-                Comparing: {selectedProperty?.toUpperCase()}
-              </div>
-            </div>
+              Comparing: {selectedProperty?.toUpperCase()}
+        </div>
+      </div>
             <div className="text-xl bg-gray-800 bg-opacity-90 px-4 py-2 rounded">Opponent Score: {opponentScore}</div>
-          </div>
-          
-          {/* Round Result Display */}
-          {roundResult && (
+        </div>
+        
+        {/* Round Result Display */}
+        {roundResult && (
             <div className="bg-gray-800 bg-opacity-90 p-4 rounded-lg mb-6 text-center">
-              <h3 className="text-xl mb-2">Round Result</h3>
-              <p className="mb-2">
+            <h3 className="text-xl mb-2">Round Result</h3>
+            <p className="mb-2">
                 {selectedProperty?.toUpperCase()}: 
                 <span className="font-bold ml-1">
                   {isCreator ? roundResult.creatorValue : roundResult.joinerValue}
@@ -606,9 +643,9 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
               </p>
               <p className={`text-lg ${getWinnerClass()} font-bold`}>
                 {getWinnerMessage()}
-              </p>
-            </div>
-          )}
+            </p>
+          </div>
+        )}
 
           {/* Opponent's Cards (face down) */}
           <div className="mb-8">
@@ -652,10 +689,10 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                       src={playerSelection.image}
                       alt={playerSelection.name}
                       className="w-40 h-40 object-contain"
-                    />
-                    <h4 className="text-lg font-bold capitalize mt-2">
+                  />
+                  <h4 className="text-lg font-bold capitalize mt-2">
                       {playerSelection.name}
-                    </h4>
+                  </h4>
                     <p className={getRarityColor(playerSelection.rarity)}>
                       {playerSelection.rarity}
                     </p>
@@ -745,10 +782,10 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                           src={opponentSelection.image}
                           alt={opponentSelection.name}
                           className="w-40 h-40 object-contain"
-                        />
-                        <h4 className="text-lg font-bold capitalize mt-2">
+                  />
+                  <h4 className="text-lg font-bold capitalize mt-2">
                           {opponentSelection.name}
-                        </h4>
+                  </h4>
                         <p className={getRarityColor(opponentSelection.rarity)}>
                           {opponentSelection.rarity}
                         </p>
@@ -776,7 +813,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                   </motion.div>
                 )}
               </div>
-            </div>
+          </div>
           )}
 
           {/* Your Cards (face up) */}
@@ -811,7 +848,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                   </div>
                 </button>
               ))}
-            </div>
+              </div>
           </div>
 
           {/* Game Over Display */}
@@ -852,7 +889,7 @@ const BattleArena = ({ onExit, battleCode, battleName, betAmount, walletAddress 
                 </button>
               </div>
             </div>
-          )}
+            )}
         </div>
       </div>
     </div>

@@ -171,7 +171,10 @@ contract PokemonBattle {
      * @param battleCode Unique identifier for the battle
      * @return bool Whether the battle exists
      */
-    function battleExists(string memory battleCode) public view returns (bool) {
+    function doesBattleExist(string memory battleCode) public view returns (bool) {
+        // Check if the battle exists by verifying the creator address is not zero
+        // This is correct since a battle is only created when a creator address is set
+        // and the creator address is never cleared, only the isActive flag is set to false
         return battles[battleCode].creator != address(0);
     }
 

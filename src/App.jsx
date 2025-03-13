@@ -33,7 +33,8 @@ function App() {
   useEffect(() => {
     const storedBattles = localStorage.getItem('activeBattles');
     if (storedBattles) {
-      setActiveBattles(JSON.parse(storedBattles));
+      const parsedBattles = JSON.parse(storedBattles);
+      setActiveBattles(parsedBattles);
     }
     
     // Set up an interval to check for updates in localStorage
@@ -47,15 +48,39 @@ function App() {
         if (showWaitingRoom && battleInfo.battleCode) {
           const userBattle = parsedBattles[battleInfo.battleCode];
           if (userBattle && userBattle.status === 'ready') {
+            console.log("Someone joined the battle, transitioning to battle arena", userBattle);
+            // Update battleInfo with joiner information
+            setBattleInfo(prevInfo => ({
+              ...prevInfo,
+              joiner: userBattle.joiner
+            }));
             setShowWaitingRoom(false);
             setShowBattleArena(true);
           }
+        }
+        
+        // Check if this user has successfully joined a battle
+        if (!showBattleArena && !showWaitingRoom && walletConnected) {
+          Object.entries(parsedBattles).forEach(([code, battle]) => {
+            if (battle.status === 'ready' && 
+                (battle.joiner === walletAddress || battle.creator === walletAddress)) {
+              console.log("Found an active battle for this wallet, joining it", battle);
+              setBattleInfo({
+                battleCode: code,
+                battleName: battle.battleName,
+                betAmount: battle.betAmount,
+                creator: battle.creator,
+                joiner: battle.joiner
+              });
+              setShowBattleArena(true);
+            }
+          });
         }
       }
     }, 2000);
     
     return () => clearInterval(intervalId);
-  }, [showWaitingRoom, battleInfo.battleCode]);
+  }, [showWaitingRoom, showBattleArena, battleInfo.battleCode, walletAddress, walletConnected]);
 
   // Initialize Web3 and contract instance
   useEffect(() => {
@@ -201,12 +226,19 @@ function App() {
         // Save to localStorage for other browsers to pick up
         localStorage.setItem('activeBattles', JSON.stringify(updatedBattles));
         
-        // Update battle info
+        // Update battle info with all necessary information
         setBattleInfo({
           battleCode,
           battleName: currentBattles[battleCode].battleName,
           betAmount,
-          joiner: walletAddress
+          joiner: walletAddress,
+          creator: currentBattles[battleCode].creator
+        });
+        
+        console.log("Battle joined successfully, redirecting to battle arena", {
+          battleCode,
+          updatedBattles,
+          walletAddress
         });
         
         // Show battle arena
@@ -262,6 +294,7 @@ function App() {
           battleName={battleInfo.battleName}
           betAmount={battleInfo.betAmount}
           walletAddress={walletAddress}
+          contractInstance={contractInstance}
         />
       ) : showWaitingRoom ? (
         <WaitingRoom 
